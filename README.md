@@ -31,20 +31,26 @@ These are exploratory results on a small sample. No verified historical calendar
 or slot receipts were supplied; the evaluation uses an empty isolated calendar.
 The executed [evaluation notebook](tests/test_evals.ipynb) contains the confusion
 matrices, class metrics, majority baseline and disagreement IDs. Saved outputs
-contain no conversation text. A separate live controlled replay passed all nine
-turns across four fictitious cases, verifying persistent offers/bookings, mixed
-questions, ambiguous acceptance and closure reasons with zero execution failures.
-The automated suite passed 118 Python tests plus five browser-control checks.
+contain no conversation text. A separate live controlled replay passed all 15
+turns across six fictitious cases, including partial availability, strict date limits
+and preferences carried across a week boundary, with zero execution failures.
+The automated suite contains 121 Python tests plus five browser-control checks.
+
+A separate validation run on three conversations (12 recruiter turns) scored
+58.3% for Main actions and 91.7% for Exit decisions, with no model/tool failures.
+Candidate-response accuracy was 44.4% and 88.9%, respectively. These small-sample
+label comparisons do not establish booking correctness or production quality.
 
 Fine-tuning was attempted with `gpt-4.1-mini-2025-04-14`; OpenAI rejected creation
 with HTTP 403, `training_not_available`. Both uploaded files were deleted. No
 fine-tuned model or fine-tuned comparison is claimed. The prepared training estimate
 was approximately $0.21 for three epochs, excluding evaluation calls.
 
-Streamlit Community Cloud deployment is deferred at the user’s request. It still
-needs GitHub sign-in and a hosted PostgreSQL/pgvector target. Local Docker
-PostgreSQL is inaccessible from Community Cloud. The deployment section describes
-the remaining setup; no cloud URL is claimed.
+Streamlit Community Cloud deployment has resumed. GitHub deployment access is
+authorized, and a PostgreSQL 17 database has been claimed on Neon’s Free plan.
+Database initialization and cloud verification are in progress.
+Local Docker PostgreSQL is inaccessible from Community Cloud. No working cloud
+URL is claimed until deployment and its database checks complete.
 
 ## Install and run
 
@@ -684,16 +690,28 @@ no new tables, environment variables or migration commands are needed.
 
 Availability searches apply job, date, local-time, morning/afternoon and declined
 slot filters in SQL before limiting results. With no date preference, the next
-three future appointments can be found beyond 30 days. If a requested date/time
-has no match, the tool offers up to three future alternatives nearest the requested
-instant, clearly labeled as alternatives and displayed chronologically. A date
-without a time uses that date's local midnight as the ranking anchor. Alternative
-times can differ from the original preferences and need their own confirmation.
+three future appointments can be found beyond 30 days. If only one or two match
+a preference, nearby alternatives fill the remaining places, without duplicates.
+Both the answer and appointment cards label alternatives. Explicit limits such as
+“only tomorrow” remain binding; fewer than three options are shown when the calendar
+cannot meet those limits. Alternatives always need their own confirmation.
+
+Resolved preferences live in the existing graph checkpoint JSON under
+`schedule_preferences`, with their original phrase, reference timestamp, timezone
+and request ID. A follow-up such as “morning works” reuses the original resolved
+date even after a week boundary. An explicitly repeated relative date is resolved
+against the new turn. “Any day” clears the date, “any time” clears time preferences,
+and “no preferences” clears all constraints. No new database tables or environment
+variables are required. With a period but no exact time, ranking uses 09:00 for
+morning or 15:00 for afternoon; a bare date uses local midnight.
+
 If an offered appointment is taken before confirmation, the tool refreshes
 alternatives immediately and excludes the failed choice and declined slots. It
-never books a replacement automatically. An exhausted calendar reports that a
-recruiter needs to add availability. These lookups remain inside the existing
-calendar tool and Scheduling Advisor node; they add no model calls.
+never books a replacement automatically. A model's acceptance flag alone cannot
+book a slot; the candidate's latest message or explicit UI selection must support
+consent. An exhausted calendar reports that a recruiter needs to add availability.
+These lookups remain inside the existing calendar tool and Scheduling Advisor
+node and add no model calls.
 
 Scheduling, conversation and CLI tests cover the calendar update. Live container checks verified
 status, an addition with `--dry-run`, and alternative lookup with an empty OpenAI
@@ -1471,6 +1489,16 @@ remain local and Git ignored. Fine-tuning access is restricted; see the official
 and [pricing](https://developers.openai.com/api/docs/pricing). An eligible account is
 required to finish this assignment requirement; a valid chat key alone is insufficient.
 
+Uploads are tracked from the first successful file creation. If the next upload
+fails, known earlier files are deleted. A definitive job rejection also cleans
+known uploads; failure to delete one file does not skip another or mask the original
+error. A timeout or uncertain job-creation response triggers a lookup by model and
+exact upload IDs. A matching job is recovered; otherwise files are retained because
+a training job may still be using them. Technical incident metadata and remaining
+file IDs are saved with mode `0600` in the Git-ignored
+`artifacts/fine-tuning-submission.json`. Inspect the provider before retrying an
+uncertain submission, to avoid duplicate paid training jobs.
+
 Submission is explicit and paid; startup never trains models. Job metadata is saved
 in `artifacts/`. After success, set `Settings.exit_model` in `app/config.py` to
 the returned model ID. Use an empty string for the prompted baseline. Restart the
@@ -1522,7 +1550,7 @@ python -m app.main evaluate --task workflow \
   --output artifacts/workflow_evaluation.json
 ```
 
-The four independently authored fictitious cases contain nine turns. Each case
+The six independently authored fictitious cases contain 15 turns. Each case
 retains offered slot IDs, booking receipts and in-memory graph checkpoints across
 turns. Calendar rows live in a disposable SQL schema, which is removed afterward;
 production slots, bookings and conversations stay untouched. The replay uses the
@@ -1532,7 +1560,9 @@ only to slot IDs actually offered to that conversation. Reports store checks and
 counts without message/answer text. Existing trace spans record case identifiers
 and model/tool metadata. This is separate from historical label accuracy and makes
 no claim to reconstruct a missing recruiter calendar. Follow-up generation and
-uploaded-profile processing are outside its scope.
+uploaded-profile processing are outside its scope. The cases also verify partial
+availability, explicit hard limits and preference timestamps across a week boundary;
+`elapsed_seconds` controls the fictitious clock between turns.
 
 ## Offline answer-quality judge
 
@@ -1648,8 +1678,8 @@ calibration has not been performed; this check does not establish production acc
 
 ## Automated checks
 
-The suite contains **118 Python tests across 14 modules**, plus **5 browser-control
-checks**: **123 automated checks** in total. It was reduced from 237 Python tests
+The suite contains **121 Python tests across 14 modules**, plus **5 browser-control
+checks**: **126 automated checks** in total. It was reduced from 237 Python tests
 across 30 modules and 6 browser checks. Overlapping helper/UI scenarios, repeated
 validation and model-policy matrices, and tests tied to implementation details
 were removed. Related tests now share feature modules and setup.
@@ -1706,10 +1736,12 @@ pinned in the single `requirements.txt`; update it directly and rerun checks.
 
 ## Deployment
 
-Community Cloud is explicitly required by [TASK.md](TASK.md). The user chose to
-handle deployment later. The sign-in flow reached GitHub authentication, and the
-hosted PostgreSQL/pgvector target has not been selected. Streamlit terms acceptance
-was authorized; no application was deployed and no hosted database was provisioned.
+Community Cloud is explicitly required by [TASK.md](TASK.md). Deployment has
+resumed with authorization for Streamlit terms and its GitHub deployment scopes.
+The PostgreSQL 17 project has been claimed on Neon’s Free plan in Frankfurt,
+with no expiry. Database initialization and end-to-end cloud verification are in
+progress. Credentials and provisioning records stay Git ignored; use the direct
+connection with TLS and channel binding for persistent graph checkpoints.
 
 1. Use the source and PDF inputs in this GitHub repository. Keep credentials,
    benchmark records, generated exports, conversation files and local reports excluded.

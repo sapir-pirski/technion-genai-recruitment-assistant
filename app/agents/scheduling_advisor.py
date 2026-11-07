@@ -24,6 +24,7 @@ def advise(backend, repository, state: dict) -> dict:
         intent["scheduling_needed"] = True
     return {
         "schedule": result,
+        "schedule_preferences": result.get("preferences", state.get("schedule_preferences", {})),
         "booking": result.get("booking", state.get("booking")),
         "turn_intent": intent,
         "advice": result,

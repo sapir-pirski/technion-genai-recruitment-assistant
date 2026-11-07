@@ -430,6 +430,8 @@ def render_appointments(result, job, busy):
         for slot in slots:
             date, times, detail = slot_details(slot)
             with st.container(border=True, key=f"slot_card_{slot['id']}"):
+                if slot.get("is_alternative"):
+                    st.caption("Nearby alternative")
                 st.write(f"**{date}**")
                 st.subheader(times, anchor=False)
                 st.caption(detail)

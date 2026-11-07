@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
@@ -29,12 +29,18 @@ class ExpectedState(StrictModel):
     closed: bool
     bookings: int = Field(ge=0, le=1)
     minimum_offers: int = Field(default=0, ge=0, le=3)
+    maximum_offers: int = Field(default=3, ge=0, le=3)
+    alternative_count: int | None = Field(default=None, ge=0, le=3)
+    preferred_date: date | None = None
+    only_offer_date: date | None = None
+    preference_origin_time: AwareDatetime | None = None
     cited_answer: bool = False
     closure_reason: Literal["opt_out", "scheduled"] | None = None
 
 
 class ReplayStep(StrictModel):
     text: str = Field(min_length=1, max_length=4000)
+    elapsed_seconds: int | None = Field(default=None, ge=0, le=2678400)
     selected_ordinal: int | None = Field(default=None, ge=1, le=3)
     expect: ExpectedState
 
@@ -51,7 +57,13 @@ class ReplayCase(StrictModel):
     def valid_calendar(self):
         ZoneInfo(self.timezone)
         starts = sorted(self.calendar_starts)
-        if starts and starts[0] <= self.reference_time + timedelta(seconds=len(self.steps)):
+        offsets = [
+            step.elapsed_seconds if step.elapsed_seconds is not None else i
+            for i, step in enumerate(self.steps)
+        ]
+        if offsets != sorted(offsets):
+            raise ValueError("Replay turns must be in timestamp order")
+        if starts and starts[0] <= self.reference_time + timedelta(seconds=max(offsets)):
             raise ValueError("Replay appointments must be after every replay turn")
         if any(b < a + timedelta(minutes=30) for a, b in zip(starts, starts[1:], strict=False)):
             raise ValueError("Replay appointments must not overlap")
@@ -165,7 +177,12 @@ def evaluate_workflows(settings, source: Path, *, output=None, backend=None):
                                 {"title": "Python Developer", "company_name": "Example Company"},
                                 {"scheduling_enabled": True},
                                 messages,
-                                case.reference_time + timedelta(seconds=index),
+                                case.reference_time
+                                + timedelta(
+                                    seconds=step.elapsed_seconds
+                                    if step.elapsed_seconds is not None
+                                    else index
+                                ),
                                 case.timezone,
                                 selected,
                                 [],
@@ -187,12 +204,39 @@ def evaluate_workflows(settings, source: Path, *, output=None, backend=None):
                                 "offers": len(result.offered_slots),
                                 "closure_reason": result.closure_reason,
                                 "cited_answer": bool(result.source_ids),
+                                "alternative_count": sum(
+                                    bool(slot.get("is_alternative"))
+                                    for slot in result.offered_slots
+                                ),
+                                "preferred_date": state.get("schedule_preferences", {}).get("date"),
+                                "preference_origin_time": state.get("schedule_preferences", {}).get(
+                                    "date_reference_time"
+                                ),
                             }
                             checks = {
                                 "action": actual["action"] == step.expect.action,
                                 "closed": actual["closed"] == step.expect.closed,
                                 "bookings": count == step.expect.bookings,
                                 "offers": actual["offers"] >= step.expect.minimum_offers,
+                                "maximum_offers": actual["offers"] <= step.expect.maximum_offers,
+                                "alternative_count": step.expect.alternative_count is None
+                                or actual["alternative_count"] == step.expect.alternative_count,
+                                "preferred_date": actual["preferred_date"]
+                                == (
+                                    step.expect.preferred_date.isoformat()
+                                    if step.expect.preferred_date
+                                    else None
+                                ),
+                                "preference_origin_time": step.expect.preference_origin_time is None
+                                or actual["preference_origin_time"]
+                                == step.expect.preference_origin_time.isoformat(),
+                                "required_date": step.expect.only_offer_date is None
+                                or all(
+                                    slot["local_time"].startswith(
+                                        step.expect.only_offer_date.isoformat()
+                                    )
+                                    for slot in result.offered_slots
+                                ),
                                 "citations": not step.expect.cited_answer or actual["cited_answer"],
                                 "closure_reason": result.closure_reason
                                 == step.expect.closure_reason,

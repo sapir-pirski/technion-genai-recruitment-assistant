@@ -236,6 +236,7 @@ class ChatService:
             "selected_slot_id": selected_slot_id,
             "plan": {},
             "schedule": {},
+            "schedule_preferences": old.get("schedule_preferences", {}),
             "info": {},
             "advisors": [],
             "exit_label": "do_not_end",

@@ -222,15 +222,7 @@ class ScheduleRepository:
         query = self._available_query(start, job_id, exclude_ids)
         if end is not None:
             query = query.where(Slot.starts_at < utc_naive(end))
-        local = func.timezone(timezone, func.timezone("UTC", Slot.starts_at))
-        if exact_time is not None:
-            query = query.where(cast(local, Time) == exact_time)
-        if period not in (None, "morning", "afternoon"):
-            raise ValueError("Choose morning or afternoon")
-        if period == "morning":
-            query = query.where(extract("hour", local) < 12)
-        elif period == "afternoon":
-            query = query.where(extract("hour", local) >= 12)
+        query = self._time_filters(query, timezone, exact_time, period)
         return self._search(
             query.order_by(Slot.starts_at, Slot.id),
             timezone,
@@ -245,6 +237,19 @@ class ScheduleRepository:
         )
 
     @staticmethod
+    def _time_filters(query, timezone, exact_time, period):
+        local = func.timezone(timezone, func.timezone("UTC", Slot.starts_at))
+        if exact_time is not None:
+            query = query.where(cast(local, Time) == exact_time)
+        if period not in (None, "morning", "afternoon"):
+            raise ValueError("Choose morning or afternoon")
+        if period == "morning":
+            query = query.where(extract("hour", local) < 12)
+        elif period == "afternoon":
+            query = query.where(extract("hour", local) >= 12)
+        return query
+
+    @staticmethod
     def _available_query(start, job_id, exclude_ids):
         return select(Slot).where(
             Slot.position == "Python Dev",
@@ -254,26 +259,46 @@ class ScheduleRepository:
             Slot.id.not_in(exclude_ids or []),
         )
 
-    def nearest(self, start, timezone, *, anchor, job_id=DEFAULT_JOB_ID, exclude_ids=None):
+    def nearest(
+        self,
+        start,
+        timezone,
+        *,
+        anchor,
+        job_id=DEFAULT_JOB_ID,
+        exclude_ids=None,
+        end=None,
+        exact_time=None,
+        period=None,
+        limit=3,
+    ):
         """Select three future alternatives nearest the requested instant, then display by date."""
         ZoneInfo(timezone)
+        if not 1 <= limit <= 3:
+            raise ValueError("Choose between one and three alternatives")
         distance = func.abs(extract("epoch", Slot.starts_at - utc_naive(anchor)))
+        matching = self._available_query(start, job_id, exclude_ids)
+        if end is not None:
+            matching = matching.where(Slot.starts_at < utc_naive(end))
+        matching = self._time_filters(matching, timezone, exact_time, period)
         nearest_ids = (
-            self._available_query(start, job_id, exclude_ids)
-            .with_only_columns(Slot.id)
+            matching.with_only_columns(Slot.id)
             .order_by(distance, Slot.starts_at, Slot.id)
-            .limit(3)
+            .limit(limit)
         )
         query = select(Slot).where(Slot.id.in_(nearest_ids)).order_by(Slot.starts_at, Slot.id)
         return self._search(
             query,
             timezone,
-            3,
+            limit,
             job_id=job_id,
             search_kind="alternatives",
             starts_at=start.isoformat(),
             requested_instant=anchor.isoformat(),
             excluded_slot_ids=exclude_ids or [],
+            period=period,
+            ends_at=end.isoformat() if end else None,
+            requested_time=exact_time.isoformat() if exact_time else None,
         )
 
     def _search(self, query, timezone, limit, **attributes):

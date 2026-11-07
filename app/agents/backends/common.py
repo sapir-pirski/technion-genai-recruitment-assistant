@@ -70,6 +70,7 @@ def model_context(state: dict, *, include_profile=True) -> dict:
         "reference_time": state["reference_time"],
         "timezone": state["timezone"],
         "offered_slots": state.get("offered_slots", []),
+        "schedule_preferences": state.get("schedule_preferences", {}),
         "booking": state.get("booking"),
         "advisor_results": state.get("advisor_results", []),
         "turn_intent": state.get("turn_intent", {}),

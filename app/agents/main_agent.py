@@ -171,7 +171,11 @@ def compose(state: dict) -> dict:
             if slots:
                 parts.append(
                     "Available appointments:\n"
-                    + "\n".join(f"{index}. {slot['label']}" for index, slot in enumerate(slots, 1))
+                    + "\n".join(
+                        f"{index}. {slot['label']}"
+                        + (" (nearby alternative)" if slot.get("is_alternative") else "")
+                        for index, slot in enumerate(slots, 1)
+                    )
                 )
                 parts.append("Which appointment would you like to confirm?")
         if info:

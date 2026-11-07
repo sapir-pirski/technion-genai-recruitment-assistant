@@ -23,6 +23,7 @@ class ConversationState(TypedDict, total=False):
     plan: dict
     exit_label: str
     schedule: dict
+    schedule_preferences: dict
     info: dict
     advisors: list[str]
     error: str | None

@@ -1,18 +1,20 @@
 import json
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 
 import pytest
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.config import Settings
+from app.graph.builder import build_graph
 from app.ingestion.models import DEFAULT_JOB_ID
 from app.ingestion.registry import JobRegistry
 from app.main import main
 from app.storage.models import Booking, Slot, TraceSpan
 from app.storage.schedule_repository import BookingConflict
+from app.tools.scheduling import scheduling_tool
 
 
 def test_booking_is_idempotent_and_removes_availability(repository, now):
@@ -45,6 +47,85 @@ def test_past_slot_cannot_be_booked(repository, now):
     slot = repository.available(now, now + timedelta(days=1), "UTC")[0]
     with pytest.raises(BookingConflict):
         repository.book(slot["id"], "alice", "r1", now + timedelta(days=1), "UTC")
+
+
+def test_partial_options_are_filled_without_relaxing_hard_constraints(
+    repository, now, calendar_request
+):
+    with Session(repository.engine) as session, session.begin():
+        session.execute(delete(Slot))
+        for day, hour in [(21, 9), (21, 10), (22, 9)]:
+            session.add(Slot(starts_at=datetime(2026, 10, day, hour), available=True))
+    state = {
+        "conversation_id": "partial",
+        "request_id": "one",
+        "timezone": "UTC",
+        "reference_time": now.isoformat(),
+        "messages": [{"role": "user", "content": "Any appointments tomorrow?"}],
+    }
+    request = {**calendar_request, "date_text": "tomorrow"}
+    result = scheduling_tool(repository, state).invoke(request)
+    assert len(result["slots"]) == 3 and sum(s["is_alternative"] for s in result["slots"]) == 1
+    assert len({s["id"] for s in result["slots"]}) == 3
+    state.update(
+        schedule_preferences=result["preferences"],
+        messages=[{"role": "user", "content": "Only tomorrow works."}],
+    )
+    request["time_text"] = "09:00"  # An offered time is not a newly stated preference.
+    request.update(accepts_slot=True, selected_slot_id=result["slots"][0]["id"])
+    strict = scheduling_tool(repository, state).invoke(request)
+    assert len(strict["slots"]) == 2 and all(
+        s["starts_at"].startswith("2026-10-21") for s in strict["slots"]
+    )
+    state.update(
+        schedule_preferences=strict["preferences"],
+        messages=[{"role": "user", "content": "Any day works."}],
+    )
+    cleared = scheduling_tool(repository, state).invoke(calendar_request)
+    assert len(cleared["slots"]) == 3 and not cleared["preferences"].get("date")
+    assert not cleared["preferences"]["required_fields"]
+
+
+def test_relative_preference_survives_checkpoint_and_week_boundary(service, calendar_request):
+    sunday = datetime(2030, 1, 6, 23, tzinfo=UTC)
+    with Session(service.repository.engine) as session, session.begin():
+        session.execute(delete(Slot))
+        for day in (11, 18):
+            for hour in (9, 10, 11):
+                session.add(Slot(starts_at=datetime(2030, 1, day, hour), available=True))
+    service.backend.plan.return_value = service.backend.plan.return_value.model_copy(
+        update={"scheduling_needed": True}
+    )
+    calendar_request["date_text"] = "next Friday"
+    service.turn("week-boundary", "Only next Friday works.", reference_time=sunday)
+    prefs = service.state("week-boundary")["schedule_preferences"]
+    assert prefs["date"] == "2030-01-11" and prefs["date_reference_time"] == sunday.isoformat()
+    service.graph = build_graph(
+        service.backend,
+        service.repository,
+        service.retriever,
+        service.graph.checkpointer,
+        service.profiles,
+    )
+    calendar_request["period"] = "morning"
+    calendar_request["time_text"] = "09:00"  # Model repeats an offered time; retain all mornings.
+    result = service.turn(
+        "week-boundary", "Morning would be better.", reference_time=sunday + timedelta(hours=2)
+    )
+    assert len(result.offered_slots) == 3 and all(
+        s["starts_at"].startswith("2030-01-11") for s in result.offered_slots
+    )
+    assert (
+        service.state("week-boundary")["schedule_preferences"]["date_reference_time"]
+        == sunday.isoformat()
+    )
+    calendar_request["date_text"] = "2030-01-11"  # Model repeats an old canonical date.
+    changed = service.turn(
+        "week-boundary",
+        "Actually next Friday instead.",
+        reference_time=sunday + timedelta(hours=2, seconds=1),
+    )
+    assert all(s["starts_at"].startswith("2030-01-18") for s in changed.offered_slots)
 
 
 @pytest.fixture

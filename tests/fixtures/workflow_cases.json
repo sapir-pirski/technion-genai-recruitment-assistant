@@ -158,5 +158,125 @@
         }
       }
     ]
+  },
+  {
+    "timezone": "UTC",
+    "job_description": "This Python Developer role requires Python, SQL and unit testing. Responsibilities include building Python services and reviewing code.",
+    "case_id": "partial_availability_and_hard_limits",
+    "reference_time": "2030-01-07T08:00:00Z",
+    "calendar_starts": [
+      "2030-01-08T09:00:00Z",
+      "2030-01-08T10:00:00Z",
+      "2030-01-09T09:00:00Z"
+    ],
+    "steps": [
+      {
+        "text": "Any interview appointments tomorrow?",
+        "elapsed_seconds": null,
+        "expect": {
+          "action": "schedule",
+          "closed": false,
+          "bookings": 0,
+          "minimum_offers": 3,
+          "maximum_offers": 3,
+          "alternative_count": 1,
+          "preferred_date": "2030-01-08",
+          "closure_reason": null
+        }
+      },
+      {
+        "text": "Only tomorrow works.",
+        "elapsed_seconds": null,
+        "expect": {
+          "action": "schedule",
+          "closed": false,
+          "bookings": 0,
+          "minimum_offers": 2,
+          "maximum_offers": 2,
+          "alternative_count": 0,
+          "preferred_date": "2030-01-08",
+          "closure_reason": null,
+          "only_offer_date": "2030-01-08"
+        }
+      },
+      {
+        "text": "Any day works. Show me available interview times.",
+        "elapsed_seconds": null,
+        "expect": {
+          "action": "schedule",
+          "closed": false,
+          "bookings": 0,
+          "minimum_offers": 3,
+          "maximum_offers": 3,
+          "alternative_count": 0,
+          "preferred_date": null,
+          "closure_reason": null
+        }
+      }
+    ]
+  },
+  {
+    "timezone": "UTC",
+    "job_description": "This Python Developer role requires Python, SQL and unit testing. Responsibilities include building Python services and reviewing code.",
+    "case_id": "relative_date_across_week_boundary",
+    "reference_time": "2030-01-06T23:00:00Z",
+    "calendar_starts": [
+      "2030-01-11T09:00:00Z",
+      "2030-01-11T10:00:00Z",
+      "2030-01-11T11:00:00Z",
+      "2030-01-18T09:00:00Z",
+      "2030-01-18T10:00:00Z",
+      "2030-01-18T11:00:00Z"
+    ],
+    "steps": [
+      {
+        "text": "Only next Friday works. Show me interview times.",
+        "elapsed_seconds": null,
+        "expect": {
+          "action": "schedule",
+          "closed": false,
+          "bookings": 0,
+          "minimum_offers": 3,
+          "maximum_offers": 3,
+          "alternative_count": 0,
+          "preferred_date": "2030-01-11",
+          "closure_reason": null,
+          "only_offer_date": "2030-01-11",
+          "preference_origin_time": "2030-01-06T23:00:00+00:00"
+        }
+      },
+      {
+        "text": "Morning would be better.",
+        "elapsed_seconds": 7200,
+        "expect": {
+          "action": "schedule",
+          "closed": false,
+          "bookings": 0,
+          "minimum_offers": 3,
+          "maximum_offers": 3,
+          "alternative_count": 0,
+          "preferred_date": "2030-01-11",
+          "closure_reason": null,
+          "only_offer_date": "2030-01-11",
+          "preference_origin_time": "2030-01-06T23:00:00+00:00"
+        }
+      },
+      {
+        "text": "Actually next Friday instead.",
+        "elapsed_seconds": 7201,
+        "expect": {
+          "action": "schedule",
+          "closed": false,
+          "bookings": 0,
+          "minimum_offers": 3,
+          "maximum_offers": 3,
+          "alternative_count": 0,
+          "preferred_date": "2030-01-18",
+          "closure_reason": null,
+          "only_offer_date": "2030-01-18",
+          "preference_origin_time": "2030-01-07T01:00:01+00:00"
+        }
+      }
+    ]
   }
 ]

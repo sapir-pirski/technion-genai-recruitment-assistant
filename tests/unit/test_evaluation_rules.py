@@ -1,9 +1,12 @@
 import json
 from collections import Counter
 from copy import deepcopy
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+import httpx
 import pytest
+from openai import PermissionDeniedError
 from pydantic import ValidationError
 
 from app.agents.backends.common import prompt_spec
@@ -101,6 +104,84 @@ def test_exit_file_validation_uses_the_selected_models_instruction_role(tmp_path
     path = tmp_path / "format-only.jsonl"
     path.write_text(json.dumps(row) + "\n")
     assert validate_jsonl(path, base_model="gpt-5-nano") == 1
+
+
+def test_training_upload_failures_cleanup_and_uncertain_job_recovery(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.fine_tuning.jobs.ROOT", tmp_path)
+    settings = Settings(
+        _env_file=None,
+        database_url="postgresql://example:example@localhost/example",
+        openai_api_key="test-only-key",
+    )
+    spec = prompt_spec("exit", "gpt-4o-mini")
+    row = {
+        "messages": [
+            {"role": spec["instruction_role"], "content": spec["content"]},
+            {"role": "user", "content": '{"history":[]}'},
+            {"role": "assistant", "content": "do_not_end"},
+        ]
+    }
+    path = tmp_path / "training.jsonl"
+    path.write_text((json.dumps(row) + "\n") * 10)
+    with patch("app.fine_tuning.jobs.OpenAI") as factory:
+        client = factory.return_value
+        client.files.create.side_effect = [
+            SimpleNamespace(id="train"),
+            TimeoutError("private upload detail"),
+        ]
+        with pytest.raises(TimeoutError, match="private upload detail"):
+            submit(settings, path, path, "gpt-4o-mini")
+        client.files.delete.assert_called_once_with("train")
+        client.fine_tuning.jobs.create.assert_not_called()
+    rejection = PermissionDeniedError(
+        "private rejection",
+        response=httpx.Response(
+            403, request=httpx.Request("POST", "https://api.openai.com/v1/fine_tuning/jobs")
+        ),
+        body=None,
+    )
+    with patch("app.fine_tuning.jobs.OpenAI") as factory:
+        client = factory.return_value
+        client.files.create.side_effect = [
+            SimpleNamespace(id="train"),
+            SimpleNamespace(id="validation"),
+        ]
+        client.fine_tuning.jobs.create.side_effect = rejection
+        client.files.delete.side_effect = [RuntimeError("private cleanup detail"), None]
+        with pytest.raises(PermissionDeniedError) as caught:
+            submit(settings, path, path, "gpt-4o-mini")
+        assert caught.value is rejection
+        assert [call.args[0] for call in client.files.delete.call_args_list] == [
+            "train",
+            "validation",
+        ]
+        report = tmp_path / "artifacts/fine-tuning-submission.json"
+        assert json.loads(report.read_text())["remaining_file_ids"] == ["train"]
+        assert "private" not in report.read_text() and report.stat().st_mode & 0o777 == 0o600
+    for found in (True, False):
+        with patch("app.fine_tuning.jobs.OpenAI") as factory:
+            client = factory.return_value
+            client.files.create.side_effect = [
+                SimpleNamespace(id="train"),
+                SimpleNamespace(id="validation"),
+            ]
+            client.fine_tuning.jobs.create.side_effect = TimeoutError("private creation detail")
+            candidate = SimpleNamespace(
+                id="job-recovered",
+                status="running",
+                training_file="train",
+                validation_file="validation",
+                model="gpt-4o-mini",
+            )
+            client.fine_tuning.jobs.list.return_value.data = [candidate] if found else []
+            if found:
+                result = submit(settings, path, path, "gpt-4o-mini")
+                assert result["job_id"] == "job-recovered" and result["recovered"]
+            else:
+                with pytest.raises(TimeoutError):
+                    submit(settings, path, path, "gpt-4o-mini")
+                assert json.loads(report.read_text())["job_outcome_unknown"]
+            client.files.delete.assert_not_called()
 
 
 def rating(score=5, refs=None):
