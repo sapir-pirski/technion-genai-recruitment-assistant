@@ -146,7 +146,7 @@ See the [full workflow](#reference-workflow), [schema](#reference-database), and
 
 ## Evaluation
 
-Recorded on **7 November 2026**.
+Recorded on **8 November 2026**.
 
 The supplied benchmark contains **15 conversations and 59 labeled recruiter
 turns**, split by complete conversation into 9 training, 3 validation, and 3 test
@@ -156,7 +156,7 @@ conversations. The held-out test below contains 11 recruiter turns.
 |---|---:|---:|---:|
 | Main workflow · all recruiter turns | 6 / 11 | 54.5% | 0 |
 | Main workflow · candidate-response turns | 3 / 8 | 37.5% | 0 |
-| Prompted Exit Advisor · GPT-5 nano | 11 / 11 | 100% | 0 |
+| Prompted Exit Advisor · GPT-5 nano | 10 / 11 | 90.9% | 0 |
 | Fine-tuned Exit Advisor · ModernBERT | 9 / 11 | 81.8% | 0 |
 
 **The fine-tuned classifier did not outperform the prompted baseline.** Its two
@@ -170,7 +170,7 @@ The executed **[evaluation notebook](tests/test_evals.ipynb)** includes modern
 annotated confusion matrices, class metrics, baseline comparisons, and error IDs.
 It reads saved reports without making model API calls or exposing conversation text.
 A separate controlled replay passed 15 turns across six fictitious cases. The
-repository includes 121 Python tests and five browser-control checks.
+repository includes 122 Python tests and five browser-control checks.
 
 | Runtime | Exit Advisor | Model storage |
 |---|---|---|
@@ -179,6 +179,49 @@ repository includes 121 Python tests and five browser-control checks.
 
 Training, data isolation, model integrity and evaluation limitations are documented
 in the [fine-tuning reference](#reference-evaluation).
+
+## Submission verification
+
+Verified on **8 November 2026** using fictitious candidates and a disposable QA
+database. Production interview slots and bookings are excluded from booking tests.
+
+| Check | Evidence |
+|---|---|
+| Main Agent and three advisors | LangGraph routing and Continue / Schedule / End checks; 15/15 controlled replay steps across six cases. |
+| Fine-tuned Exit Advisor | Locally activated ModernBERT; training and held-out comparison in the notebook. Hugging Face is approved for this assignment. The public app uses the prompted OpenAI baseline. |
+| PDF embedding and retrieval | All 11 PDFs / 22 pages validate; 57 published PostgreSQL/pgvector chunks, using 1,536-dimensional OpenAI embeddings. |
+| SQL function calling | Three future choices, browser timezone, date interpretation, review/cancel, explicit confirmation and durable booking receipts. |
+| Candidate intake | Automatic combined intake; PDF, DOC, DOCX and TXT read successfully. Invalid type, corrupt PDF and files over 5 MB are rejected. |
+| Guardrails | Untrusted profile instructions, credential redaction, no booking without consent, opt-outs and reference-role employer handoff. |
+| Browser controls | Original-PDF download matches its source bytes; print-to-PDF preserves the answer; recording downloads locally and releases capture. |
+| Interface | Fixed starters, contextual questions, source references, role/company/location selection and a 390 × 844 responsive check. |
+| Persistence and diagnostics | Conversation JSON, checkpoint recovery, duplicate-request protection, trace links and token accounting verified. |
+| Automated checks | 122 Python cases and five browser-control cases covered. Hosted-database UI checks allow 60 seconds for completion; these are behavior checks, not latency benchmarks. |
+| Repository and setup | Virtual environment, one requirements file, secret-only environment template, launcher, license, contributors and task documentation. |
+| Deployment | [Streamlit Community Cloud](https://technion-genai-recruitment-assistant.streamlit.app) with hosted PostgreSQL/pgvector. |
+
+The held-out action scores above are small-sample label agreement, with unavailable
+historical calendar context; they do not establish production accuracy. Live test
+turns took roughly 11–56 seconds including initialization, model calls and hosted
+storage. LinkedIn links remain references, calendar invitations are not sent, and
+the trained classifier stays on the local training machine.
+
+<details>
+<summary><strong>Interface screenshots from the local QA build</strong></summary>
+
+The screenshots use public job descriptions and fictitious candidate details.
+
+| Job description | Candidate upload |
+|---|---|
+| ![Complete job description with headings and bullets](assets/screenshots/job-description.png) | ![Fictitious PDF selected for automatic intake](assets/screenshots/upload.png) |
+
+| Conversation | Interview review |
+|---|---|
+| ![Sourced answer with distinct required skills](assets/screenshots/conversation.png) | ![Timezone-aware appointment review requiring confirmation](assets/screenshots/interview-review.png) |
+
+![Clean conversation print preview](assets/screenshots/print-preview.png)
+
+</details>
 
 ## Project layout
 
@@ -198,9 +241,10 @@ app/
   storage/                Calendar, sources/profiles, conversation history and JSON export
   observability/          Structured diagnostics, execution spans and token usage
   rag/, ingestion/        Retrieval, PDFs, source collection, company logos and indexes
-  fine_tuning/            Local ModernBERT training, ONNX export and OpenAI job tooling
+  fine_tuning/            Local ModernBERT training, ONNX export and training data
   evaluation/             Dataset preparation, labeled metrics, offline quality judge and reports
 streamlit_app/            Chat UI, profile inputs, presentation helpers, styles and browser controls
+assets/screenshots/       Interface evidence from fictitious QA scenarios
 .streamlit/config.toml    Single light theme and minimal native toolbar
 config/                   Selected sources and centralized job/PDF manifest
 data/jobs/                The 11 input PDFs, including the assignment
@@ -376,12 +420,14 @@ Info answers, Scheduling and chat-profile revisions use GPT-4o mini. The indepen
 Info decision, source fact extraction and three-question generation use GPT-5
 nano. The prompted OpenAI Exit baseline also uses nano; the locally activated
 Exit Advisor uses its fine-tuned ModernBERT classifier instead. Nano uses
-`reasoning_effort="low"` for classification and profile extraction, and
-`"minimal"` for follow-ups, and omits temperature. Generative OpenAI requests use
-`max_completion_tokens`: Exit and Info decisions are capped at 512, follow-ups at
+`reasoning_effort="low"` for Exit classification and profile extraction, and
+`"minimal"` for Info decisions and follow-ups, and omits temperature. Generative OpenAI requests use
+`max_completion_tokens`: Exit is capped at 512, Info decisions at 1,024, follow-ups at
 768, and planning, answers, scheduling and profile extraction at 1,500; lowering
 `max_output_tokens` lowers these caps too. Completion limits include reasoning
-tokens. Changing model families requires checking their supported parameters.
+tokens, so a request can exhaust its budget before returning a usable answer;
+see [OpenAI's reasoning-token guidance](https://developers.openai.com/api/docs/guides/reasoning#controlling-costs).
+Changing model families requires checking their supported parameters.
 There is no automatic escalation to a more expensive model. API failures retain
 the existing error/retry behavior; invalid follow-ups retain their local fallback.
 The Main/advisor loop, SQL tool validation, explicit booking confirmation and
@@ -538,14 +584,19 @@ The specified palette pairs provide contrast of 6.57:1 for white on teal,
 and at least 3.21:1 for control outlines against their adjacent input fill.
 These are color-pair calculations, rather than a full accessibility certification.
 
-The outlined Print and Record icons replace the Print/Record screen dropdown.
-**Print** opens the browser print dialog. **Record screen** opens the browser's
+The outlined Print and Record icons open their respective browser controls.
+**Print** opens a conversation-only print layout with speaker labels, citations and
+booking details, excluding intake controls, action buttons and icon-font names.
+The browser can print it or save it as a PDF. **Record screen** opens the browser's
 sharing picker; after you choose a surface, it changes to a red **Stop recording**
 icon. Stopping from the icon or browser sharing controls downloads the video
 locally (WebM or MP4, depending on browser support). A download link is available
 if the browser blocks the automatic download. Recording captures video only;
 it uses no microphone, and videos never go to the app server or database.
 Screen recording requires a supported desktop browser and HTTPS or localhost.
+The request prefers and includes the app’s own tab where supported; the browser
+still controls permission and surface selection. See the
+[screen-capture API options](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getDisplayMedia#parameters).
 The buttons show compact dark tooltips below the icons after a 200 ms hover or
 keyboard-focus delay: **Download job description (PDF)**, **Print conversation**, **Record screen**, or **Stop
 recording** while active. Tooltips dismiss when the pointer/focus leaves or Escape
@@ -635,7 +686,8 @@ Chat updates and verification are JSON inside `candidate_profiles.data`. Source
 changes preserve chat updates. Checkpointing extraction before publication lets a failed profile write
 resume without repeating a completed model call. A chat-extraction failure is traced
 and leaves the prior profile intact; the candidate can restate the information.
-Profile content is untrusted background data and cannot request scheduling, alter
+Name comparison tolerates a terminal full stop while keeping original evidence
+quotes and distinct names. Profile content is untrusted background data and cannot request scheduling, alter
 tools, or establish job requirements.
 Only Main receives the derived candidate profile. Calendar and information-decision
 model requests use actual conversation history and their task context without
@@ -878,6 +930,9 @@ retrieval. Only SQL receipts establish a confirmed booking. Main supplies a clos
 null. A binary Exit `end` label cannot close a scheduling exchange on its own.
 The final result records `closure_reason` as `opt_out` or `scheduled`; the latter
 requires a matching SQL receipt. Ambiguous closure stays active for clarification.
+A pure closing acknowledgment after a confirmed booking retains `scheduled`
+completion even if a model confuses it with disinterest. An explicit stop request
+still produces `opt_out`.
 
 The default limit is three consultations, configured in `app/config.py`. Repeating
 the same advisor task with unchanged inputs is blocked. Before stopping, Main
@@ -1097,7 +1152,8 @@ separately from bounded HTTP transport retries.
 Chunk IDs are `<document_version_id>:<chunk_index>`. Metadata includes job,
 document and version IDs, zero-based chunk index, one-based PDF page, PDF basename,
 source URL, and chunk-text hash.
-Retrieval uses exact cosine distance filtered by collection, job, and published
+Retrieval supplies up to six relevant chunks, retaining separate required and
+preferred qualifications. It uses exact cosine distance filtered by collection, job, and published
 version IDs. Dimensions are checked against the collection before writes, so
 incompatible vectors cannot mix. Changing model, dimensions, pipeline, or chunking
 selects a separate collection.
@@ -1562,7 +1618,7 @@ selection. The five-epoch run uses seed 42, batch size 4, AdamW at learning rate
 validation macro F1, breaking ties with loss. The selected checkpoint is epoch 4:
 validation macro F1 is 0.8992 and validation accuracy is 11/12.
 Test accuracy is 9/11, with zero failures and confusion matrix `[[6, 2], [0, 3]]`
-in `do_not_end`, `end` order. The saved prompted baseline scores 11/11.
+in `do_not_end`, `end` order. The saved prompted baseline scores 10/11.
 
 Training and inference share one input contract: candidate/assistant history as
 role/content JSON, at most 12 recent messages and 16,000 history characters.
@@ -1848,8 +1904,8 @@ is not available; fixture results do not establish production accuracy.
 
 ### Automated checks
 
-The suite contains **121 Python tests across 14 modules**, plus **5 browser-control
-checks**: **126 automated checks** in total.
+The suite contains **122 Python tests across 14 modules**, plus **5 browser-control
+checks**: **127 automated checks** in total.
 
 The required `tests/test_evals.ipynb` is executed, with saved accuracy and
 confusion-matrix outputs. The automated suite emphasizes these behaviors:
