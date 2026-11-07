@@ -10,7 +10,6 @@ import pytest
 from sqlalchemy.engine import URL
 
 from ops import launch_support as launcher
-from ops.container_entrypoint import container_database_url
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -21,7 +20,6 @@ def test_native_schedule_keeps_cloud_credentials_out_of_plist(tmp_path):
         [
             sys.executable,
             str(ROOT / "ops/install_schedule.py"),
-            "--native",
             "--output",
             str(output),
         ],
@@ -30,12 +28,12 @@ def test_native_schedule_keeps_cloud_credentials_out_of_plist(tmp_path):
     )
     config = plistlib.loads(output.read_bytes())
     assert config["Label"] == "com.recruitment.job-sync"
-    assert config["ProgramArguments"][-1] == "--native"
+    assert config["ProgramArguments"] == ["/bin/bash", str(ROOT / "ops/run-job-sync.sh")]
     assert config["StartCalendarInterval"] == {"Hour": 3, "Minute": 17}
     assert "EnvironmentVariables" not in config
 
 
-def test_container_url_requires_hosted_tls_and_preserves_credentials():
+def test_hosted_database_url_requires_tls_and_preserves_credentials():
     original = URL.create(
         "postgresql+psycopg",
         username="recruitment",
@@ -46,99 +44,16 @@ def test_container_url_requires_hosted_tls_and_preserves_credentials():
         query={"sslmode": "require", "channel_binding": "require"},
     )
     encoded = original.render_as_string(hide_password=False)
-    assert container_database_url(encoded) == encoded
+    assert launcher.hosted_database_url(encoded) == encoded
     for host in ("localhost", "127.0.0.1", "::1", "postgres"):
         with pytest.raises(ValueError, match="hosted PostgreSQL"):
-            container_database_url(original.set(host=host).render_as_string(hide_password=False))
+            launcher.hosted_database_url(
+                original.set(host=host).render_as_string(hide_password=False)
+            )
     with pytest.raises(ValueError, match="requires TLS"):
-        container_database_url(
+        launcher.hosted_database_url(
             original.set(query={"sslmode": "disable"}).render_as_string(hide_password=False)
         )
-
-
-def fake_docker(tmp_path):
-    directory = tmp_path / "bin"
-    directory.mkdir()
-    executable = directory / "docker"
-    executable.write_text("""#!/bin/bash
-echo "$*" >> "$DOCKER_TEST_CALLS"
-if [[ "$*" == *"--check-config"* ]]; then
-    echo "hosted"
-elif [[ "$*" == "compose port app 8501" ]]; then
-    [[ -z "${DOCKER_TEST_PORT:-}" ]] || echo "127.0.0.1:$DOCKER_TEST_PORT"
-elif [[ "$*" == "compose build app" ]]; then
-    touch "$DOCKER_TEST_IMAGE"
-elif [[ "$*" == "image inspect "* ]]; then
-    [[ ! -f "$DOCKER_TEST_IMAGE" ]] || echo 'sha256:fictitious-image'
-fi
-exit 0
-""")
-    executable.chmod(0o755)
-    (tmp_path / ".env").write_text("OPENAI_API_KEY=fictitious\nDATABASE_URL=fictitious\n")
-    launcher = tmp_path / "run-full-project.sh"
-    launcher.write_bytes((ROOT / launcher.name).read_bytes())
-    environment = {
-        **os.environ,
-        "PATH": str(directory) + os.pathsep + os.defpath,
-        "DOCKER_TEST_CALLS": str(tmp_path / "calls"),
-        "DOCKER_TEST_IMAGE": str(tmp_path / "image-ready"),
-    }
-    return launcher, environment
-
-
-def test_launcher_builds_bootstraps_then_starts_only_the_required_services(tmp_path):
-    launcher, environment = fake_docker(tmp_path)
-    completed = subprocess.run(
-        ["bash", str(launcher), "--port", "8517", "--no-browser"],
-        env=environment,
-        text=True,
-        capture_output=True,
-    )
-    assert completed.returncode == 0 and "127.0.0.1:8517" in completed.stdout
-    calls = (tmp_path / "calls").read_text().splitlines()
-    assert calls.index("compose build app") < next(
-        i for i, v in enumerate(calls) if v.endswith("app.main bootstrap --if-needed")
-    )
-    assert not any("up" in value and "postgres" in value for value in calls)
-    assert calls[-1] == "compose up -d --no-deps --wait --wait-timeout 90 app"
-    assert not any("down" in value or " -v" in value for value in calls)
-
-
-def test_launcher_copies_template_without_overwriting_existing_credentials(tmp_path):
-    launcher, environment = fake_docker(tmp_path)
-    template = tmp_path / ".env.example"
-    template.write_text("OPENAI_API_KEY=\nDATABASE_URL=\n")
-    original = (tmp_path / ".env").read_bytes()
-    subprocess.run(
-        ["bash", str(launcher), "--no-browser"], env=environment, check=True, capture_output=True
-    )
-    assert (tmp_path / ".env").read_bytes() == original
-    (tmp_path / ".env").unlink()
-    (tmp_path / "calls").unlink()
-    completed = subprocess.run(["bash", str(launcher)], env=environment, capture_output=True)
-    assert completed.returncode == 1
-    assert (tmp_path / ".env").read_bytes() == template.read_bytes()
-    assert (tmp_path / ".env").stat().st_mode & 0o777 == 0o600
-    assert "compose build app" not in (tmp_path / "calls").read_text()
-
-
-def test_browser_opens_after_readiness_and_healthy_project_port_is_reused(tmp_path):
-    launcher, environment = fake_docker(tmp_path)
-    environment["DOCKER_TEST_PORT"] = "8518"
-    for name, body in {
-        "uname": "echo Darwin",
-        "open": 'echo "browser:$*" >> "$DOCKER_TEST_CALLS"',
-    }.items():
-        path = tmp_path / "bin" / name
-        path.write_text("#!/bin/bash\n" + body + "\n")
-        path.chmod(0o755)
-    result = subprocess.run(
-        ["bash", str(launcher)], env=environment, capture_output=True, text=True
-    )
-    assert result.returncode == 0 and "127.0.0.1:8518" in result.stdout
-    calls = (tmp_path / "calls").read_text().splitlines()
-    assert calls[-1] == "browser:http://127.0.0.1:8518"
-    assert calls[-2].endswith("--wait-timeout 90 app")
 
 
 RUNTIME_SCRIPT = r"""#!/bin/bash
@@ -231,10 +146,16 @@ exit 1
         "NATIVE_TEST_INSTALLER": str(installer),
     }
     environment.pop("PYTHON_BIN", None)
-    command = ["bash", str(launcher), "--native", "--port", "8527", "--no-browser"]
+    original_env = (tmp_path / ".env").read_bytes()
+    executable(binary / "open", '#!/bin/bash\necho "browser:$*" >> "$NATIVE_TEST_CALLS"\n')
+    command = ["bash", str(launcher), "--port", "8527"]
     first = subprocess.run(command, env=environment, capture_output=True, text=True)
     assert first.returncode == 0, first.stderr
     assert "127.0.0.1:8527" in first.stdout
+    first_calls = (tmp_path / "calls").read_text().splitlines()
+    assert first_calls[-1] == "browser:http://127.0.0.1:8527"
+    assert first_calls[-2].startswith("python:-m ops.launch_support start")
+    assert (tmp_path / ".env").read_bytes() == original_env
     second = subprocess.run(command, env=environment, capture_output=True, text=True)
     assert second.returncode == 0, second.stderr
     calls = (tmp_path / "calls").read_text()
@@ -247,6 +168,12 @@ exit 1
     assert repaired.returncode == 0, repaired.stderr
     assert list((tmp_path / "artifacts/launcher").glob("venv-backup-*"))
     assert (tmp_path / ".venv/pyvenv.cfg").is_file()
+    (tmp_path / ".env.example").write_text("OPENAI_API_KEY=\nDATABASE_URL=\n")
+    (tmp_path / ".env").unlink()
+    absent = subprocess.run(command, env=environment, capture_output=True, text=True)
+    assert absent.returncode == 1
+    assert (tmp_path / ".env").read_bytes() == (tmp_path / ".env.example").read_bytes()
+    assert (tmp_path / ".env").stat().st_mode & 0o777 == 0o600
 
 
 def test_stale_process_record_never_signals_an_unrelated_process(tmp_path, monkeypatch):

@@ -34,7 +34,7 @@ matrices, class metrics, majority baseline and disagreement IDs. Saved outputs
 contain no conversation text. A separate live controlled replay passed all 15
 turns across six fictitious cases, including partial availability, strict date limits
 and preferences carried across a week boundary, with zero execution failures.
-The automated suite contains 122 Python tests plus five browser-control checks.
+The automated suite contains 119 Python tests plus five browser-control checks.
 
 A separate validation run on three conversations (12 recruiter turns) scored
 58.3% for Main actions and 91.7% for Exit decisions, with no model/tool failures.
@@ -57,183 +57,88 @@ private data remains excluded from Git. Verified backup archives stay local.
 
 ## Install and run
 
-Clone the repository and enter its folder:
+Clone the project, copy the environment template, and enter your credentials:
 
 ```bash
 git clone https://github.com/sapir-pirski/technion-genai-recruitment-assistant.git
 cd technion-genai-recruitment-assistant
-```
-
-Run commands from the repository root. The default launcher builds and runs one
-app container; PostgreSQL/pgvector is hosted in Neon. Docker Compose contains no
-database service or persistent database volume. Use `--native` for a Python venv
-without Docker.
-
-Python 3.13, a virtual environment at `/opt/venv`, all Python dependencies and
-LibreOffice are included in the application image; host Python is not required.
-
-Copy the environment template, rename the copy to `.env`, and fill in your credentials:
-
-```bash
 cp -n .env.example .env
-# Edit .env before continuing.
+# Edit .env, then run:
 ./run-full-project.sh
 ```
 
-Both environment files contain exactly these two variables:
+Both `.env` and `.env.example` contain exactly two variables:
 
 | Variable | Purpose |
 |---|---|
-| `OPENAI_API_KEY` | Your OpenAI API key, required for agents, embeddings, and model evaluation |
-| `DATABASE_URL` | PostgreSQL connection URL used by every application component |
+| `OPENAI_API_KEY` | OpenAI access for agents, embeddings and explicitly invoked evaluations |
+| `DATABASE_URL` | The shared hosted PostgreSQL/pgvector connection, with TLS |
 
-Keep `.env` private and retain `.env.example` as the shared template. Supply the
-same hosted database connection used by Community Cloud, with `sslmode=require`
-or stronger verification. Loopback database hosts are rejected by startup checks.
-The OpenAI key and database URL are the only application credentials; database
-passwords belong inside the private connection URL.
+Keep `.env` private. Use the same database connection as Community Cloud, with
+`sslmode=require` or stronger verification. Startup rejects loopback database hosts.
+If `.env` is missing, the launcher creates it with owner-only permissions and stops
+so you can fill it in. Existing credentials are never replaced.
 
-The script reuses Docker's cached dependency layers, checks Python, required
-packages, credentials and document support, waits for the database, checks PDF
-index readiness, and starts or reuses the app. It opens your browser only after the
-app is healthy. The default URL is **http://127.0.0.1:8502**. Existing PostgreSQL
-data and credentials are preserved.
+The launcher checks Python 3.11+ (preferring 3.13), creates or repairs `.venv`,
+installs missing or changed dependencies from `requirements.txt`, checks LibreOffice,
+validates credentials and published PDF indexes, starts Streamlit and opens the
+browser after HTTP readiness. Healthy launches reuse the venv and dependencies.
+Only new or changed PDFs require embedding calls; ready indexes skip ingestion.
+Online job scraping and model training do not run during startup.
 
-A fingerprint of image build inputs, host user/group IDs and the recorded image
-identity avoids rebuilding/exporting unchanged images. Changed source or requirements,
-or a replaced/missing image, triggers a build. The fingerprint cache lives under
-`artifacts/launcher/` and contains no credentials or input documents.
-If `.env` is missing, it copies the template with owner-only permissions and stops
-so you can enter the two values. Dependency installation needs package-index
-access; only new or changed PDFs need OpenAI embeddings and incur usage charges.
+If Python is missing, the script uses the official uv installer from
+`https://astral.sh/uv/install.sh` and installs project-managed Python 3.13 under
+`artifacts/launcher/`. `PYTHON_BIN=python3.13` selects a working interpreter.
+An incomplete venv is preserved under `artifacts/launcher/venv-backup-*` before
+replacement. Missing pip is repaired with `ensurepip`; an offline dependency check
+and `pip check` determine whether installation is needed. Packages are installed
+only inside the project venv.
 
-Containers keep running after the launcher exits. The launcher reuses this project's
-published port, or selects a free port starting at 8502. `--port 8503` requests an
-exact port and fails clearly if another process owns it; unrelated processes are
-never stopped. `--no-browser` supports unattended use. Headless Linux prints the
-URL when no desktop browser is available.
-The launcher sets build-time user/group IDs to match the host, allowing the
-non-root app user to write the mounted data folders without changing their permissions.
+Missing LibreOffice is installed through Homebrew on macOS or apt/dnf on supported
+Linux systems. Homebrew must already be installed; Linux installation may need the
+system administrator prompt. Other platforms receive a manual setup instruction.
+Install the converter before processing DOC uploads; all supported document readers
+are checked by `python -m app.main doctor`.
+
+The app runs in the background at **http://127.0.0.1:8502** by default. A healthy
+managed process and its port are reused. An occupied default port selects the next
+free port; an explicit `--port` fails clearly when another process owns it.
+The launcher checks PID, process start time and command identity before stopping
+anything. It leaves unrelated applications alone. Changed app sources or repaired
+dependencies restart the managed process.
 
 ```bash
+./run-full-project.sh --no-browser
+./run-full-project.sh --port 8503
 ./run-full-project.sh --status
 ./run-full-project.sh --logs
 ./run-full-project.sh --restart --no-browser
-./run-full-project.sh --stop       # Stop the app; the hosted database stays available.
-./run-full-project.sh              # Check/reuse dependencies and indexes; open browser.
+./run-full-project.sh --stop
 ```
 
-`app` checks the hosted database connection and performs non-destructive schema
-initialization with a bounded readiness wait before starting Streamlit. Container
-restarts do not run ingestion or install dependencies. The launcher explicitly
-runs `bootstrap --if-needed`: it compares PDF filenames/bytes, manifest hashes,
-document paths, collection/format versions and published chunk completeness. Ready
-indexes skip ingestion and model initialization entirely. New, changed, removed,
-relocated or incomplete inputs use the existing incremental ingestion command.
-No online source scraping occurs during startup. A subsequent `docker compose
-up -d --wait app` starts only the app without re-ingestion.
+`--no-browser` supports unattended use; headless hosts print the URL. Browser
+opening follows HTTP readiness. Stop affects only the managed UI process; Neon and
+local source files remain intact. State and owner-only logs live under
+`artifacts/launcher/`. `--server.port` remains an alias for `--port`; additional
+Streamlit arguments are forwarded to the server.
 
-The application image contains code, dependencies and two explicitly included
-fictitious evaluation fixtures. `.dockerignore` and explicit
-COPY instructions exclude `.env`, deployment secrets, the host `.venv`, PDFs,
-private datasets, configuration, reports and logs. Runtime bind mounts keep `data/`,
-`config/` and `artifacts/` in the repository. Database and vector records live in
-Neon. Stopping or removing the app container leaves the hosted database intact.
-Back up local source/configuration files and take separate private database backups.
-
-All `python -m app.main ...` commands below can run in the built image by prefixing
-them with `docker compose run --rm --no-deps -T app`, for example:
-
-```bash
-docker compose run --rm --no-deps -T app python -m app.main index-status
-docker compose run --rm --no-deps -T app python -m app.main ingest
-```
-
-The database must already be running. Source refresh uses `sync-jobs`; `ingest`
-reads only local PDFs. Images are built locally and are not published to a registry.
-
-For startup problems, use `--status`, `--logs` and the owner-only
-`artifacts/launcher/launcher.log`. Terminal errors identify the failed stage and log
-path; configuration checks name missing credential variables without printing values.
-Docker Desktop is started automatically on macOS when installed but inactive;
-Linux attempts a rootless user Docker service. If that is unavailable, start the
-daemon through the host's normal service management. Read-only lifecycle commands
-do not start an inactive Docker daemon. Docker/Compose installation remains a host
-prerequisite. A busy explicitly selected port needs another `--port`.
-If Docker reports permission errors on mounted folders, rebuild through the
-launcher as the folder-owning user so the image user IDs match. If authentication
-fails, check the hosted connection and its TLS options. Editing `.env` selects a
-connection; it does not change the provider's database password.
-
-### Native virtual environment
-
-Use `./run-full-project.sh --native` for native operation on macOS/Linux/WSL. It
-checks existing interpreters and reuses a compatible Python (3.11+, preferably
-3.13). If none exists, it installs Python 3.13 using
-[uv's managed Python support](https://docs.astral.sh/uv/guides/install-python/).
-If uv itself is missing, its official HTTPS installer places it under
-`artifacts/launcher/tools/`; managed Python stays under `artifacts/launcher/python/`.
-No global Python, executable links or shell profiles are changed. Installation
-needs network access. `PYTHON_BIN=python3.13` selects an existing interpreter.
-
-The script creates `.venv` or preserves an incomplete/incompatible environment in
-`artifacts/launcher/venv-backup-*` before rebuilding it. Missing pip is repaired
-with `ensurepip`. An offline pip dry-run against `requirements.txt` and `pip check`
-verify direct versions, extras and dependency consistency. Only failed checks
-trigger package installation; healthy launches neither reinstall packages nor
-contact a package index. Packages are installed only in the project venv.
-
-Missing LibreOffice is installed using Homebrew on macOS or apt/dnf on supported
-Linux systems. Homebrew must already be installed; Linux installation may require
-the operating system's sudo prompt. Unsupported package managers receive a clear
-setup instruction. Docker includes the converter and needs no host installation.
-
-Native startup runs a managed background Streamlit process, waits for HTTP health,
-and then opens the browser. Repeated starts reuse a healthy process; changed app
-sources restart it. State and private logs live in `artifacts/launcher/`. Process
-ownership is checked against its PID, start time and hashed command before signals
-are sent, and native start/stop operations use a file lock. These commands work
-without resetting database contents:
-
-```bash
-./run-full-project.sh --native --port 8503 --no-browser
-./run-full-project.sh --native --status
-./run-full-project.sh --native --logs
-./run-full-project.sh --native --restart --no-browser
-./run-full-project.sh --native --stop
-```
-
-Native stop affects only the managed app and leaves the shared database running.
-`--server.port` remains an alias for `--port` in older commands. This flow runs
-the UI in the host venv and connects directly to Neon; no database is started locally.
-Stop the containerized UI before switching runtimes; bootstrap refreshes local
-document-path metadata without changing PDF bytes or re-embedding unchanged text.
-
-Launcher checks cover mocked environment installation and dependency reuse,
-credential preservation, startup/browser ordering and unrelated-process protection.
-Live checks on
-this machine verified Docker/native start, reuse, restart, stop, status/logs, browser
-opening and skipped ingestion on ready indexes. Native checks reused the installed
-Python and LibreOffice. Database records, all 11 PDFs, current vectors and `.env`
-were unchanged, with zero new embedding calls. The ignored
-launcher verification report (`artifacts/launcher/verification.json`, generated locally and Git ignored) records these checks.
-
-For manual native setup:
+For manual setup:
 
 ```bash
 python3.13 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
 cp -n .env.example .env
-# Edit .env with your credentials.
-docker compose up -d --wait postgres
+# Fill in .env and install LibreOffice for your operating system.
 python -m app.main doctor
-python -m app.main bootstrap
-python -m streamlit run streamlit_app/streamlit_main.py --server.port 8503
+python -m app.main bootstrap --if-needed
+python -m streamlit run streamlit_app/streamlit_main.py --server.port 8502
 ```
 
-On Windows, activate with `.venv\Scripts\activate`. Keep an existing `.env`
-and edit it directly rather than replacing its values.
+A manually started foreground process stops with Ctrl+C. On Windows, activate the
+venv with `.venv\Scripts\activate`; automatic Bash setup targets macOS/Linux/WSL.
+All CLI commands below can use the activated venv or the `.venv/bin/python` binary.
+The application, ingestion worker and Community Cloud share the hosted database.
 
 ## Configuration and usage
 
@@ -676,14 +581,6 @@ or unavailable ones, remain intact. Future legacy slots without durations must b
 resolved before overlap validation can proceed. The selected job must be active
 with scheduling enabled; calendar management does not enable imported jobs.
 
-For Docker, prefix either command with
-`docker compose run --rm --no-deps -T app`, for example:
-
-```bash
-docker compose run --rm --no-deps -T app python -m app.main calendar status \
-  --job-id assignment-python-developer --timezone Asia/Jerusalem
-```
-
 These commands use PostgreSQL without calling OpenAI. Run the project launcher
 first to initialize storage. Calendar operations use existing application modules;
 no new tables, environment variables or migration commands are needed.
@@ -713,7 +610,7 @@ consent. An exhausted calendar reports that a recruiter needs to add availabilit
 These lookups remain inside the existing calendar tool and Scheduling Advisor
 node and add no model calls.
 
-Scheduling, conversation and CLI tests cover the calendar update. Live container checks verified
+Scheduling, conversation and CLI tests cover the calendar update. Live database checks verified
 status, an addition with `--dry-run`, and alternative lookup with an empty OpenAI
 key. All 161 stored slots, the existing booking, other application records, input
 PDFs and credentials were preserved; the schema remains at 22 tables. The local
@@ -905,8 +802,8 @@ recovery also reuses the redacted message without repeating completed model work
 
 One PostgreSQL database with pgvector stores catalog records, embeddings, bookings,
 conversation history, execution traces, and LangGraph checkpoints. All components use the same `DATABASE_URL`.
-[compose.yaml](compose.yaml) starts only the optional app container. Native,
-containerized and Community Cloud instances connect to the same hosted database.
+The local venv application, scheduled worker and Community Cloud instance connect
+to the same hosted database.
 Initialization creates the vector extension and final tables when absent, under
 an advisory lock, without resetting data. The project has no running local database
 or database volume.
@@ -989,7 +886,7 @@ All 22 tables were transferred to Neon in one transaction after backups of both
 databases were restored and verified. Existing local slot IDs were retained so
 bookings and checkpoints keep their references; cloud ingestion history was merged.
 Every expected row was checked before commit. PDF paths were normalized for shared
-use by the native, containerized and cloud runtimes. There are no retained migration
+use by the venv and cloud runtimes. There are no retained migration
 scripts or upgrade hooks.
 
 The transfer preserved 4 conversations, 10 messages, 1 booking, 161 stored slots,
@@ -997,7 +894,7 @@ The transfer preserved 4 conversations, 10 messages, 1 booking, 161 stored slots
 11 published PDFs with 57 RAG chunks. These counts describe the transfer snapshot;
 normal app use changes operational records. The original local database is retired.
 Private, restore-tested archives and their checksums remain under
-`artifacts/backups/`, excluded from Git and container images. Transfer evidence is
+`artifacts/backups/`, excluded from Git and shared artifacts. Transfer evidence is
 in the ignored `artifacts/cloud-transfer-verification.json`.
 
 ## Conversation history, logging, and tracing
@@ -1344,20 +1241,14 @@ These ten postings are reference data, not additional labeled training examples.
 
 ## Daily synchronization
 
-The scheduled command is `ops/run-job-sync.sh`. It runs a temporary container from
-the already-built app image, loads runtime credentials, refreshes selected sources,
-and ingests all local PDFs. It removes that container on completion. It does not
-build/pull images, install packages, start Streamlit, submit training jobs or create
-calendar slots. Build once with `./run-full-project.sh` and keep Docker running.
-The hosted database must be reachable with its configured TLS options. The existing
-PostgreSQL lease prevents overlapping native and
-containerized sync runs. Use `./ops/run-job-sync.sh --native` for a prepared host venv.
+The scheduled command is `ops/run-job-sync.sh`. It reuses `.venv` and reads the
+hosted database connection and OpenAI key from `.env`. Prepare the environment
+first with `./run-full-project.sh`. Scheduled runs do not install dependencies,
+start Streamlit, train models, create interview slots or alter bookings.
 
-Both `./ops/run-job-sync.sh` (app image) and `./ops/run-job-sync.sh --native`
-(prepared venv) read the same hosted connection from `.env`. The worker refreshes
-PDFs, embeddings, descriptions and company assets; it does not create availability
-or alter bookings. Use `--native --offline` to recheck existing PDFs without fetching
-sources. The installed daily worker uses the venv, so Docker is not required.
+The worker refreshes reviewed sources, PDFs, embeddings, descriptions and company
+assets. PostgreSQL leases prevent overlapping corpus writers. Use
+`./ops/run-job-sync.sh --offline` to recheck existing PDFs without fetching sources.
 
 ### macOS
 
@@ -1376,24 +1267,17 @@ launchctl print gui/$(id -u)/com.recruitment.job-sync
 python3 ops/install_schedule.py --remove
 ```
 
-The installed worker uses `--native` at **03:17 Asia/Jerusalem** and connects to
-Neon through `.env`. The redundant second schedule was removed. Its plist stores
-only the command and paths, without database passwords or API keys.
-
-```bash
-python3 ops/install_schedule.py --native
-./ops/run-job-sync.sh --native
-```
-
-The installer uses Python's standard library. The user needs a login session and
-an available host. Docker is needed only when choosing the containerized worker.
-Use an always-on worker host for dependable daily freshness.
+The installed worker runs at **03:17 Asia/Jerusalem** and connects to Neon through
+`.env`. Its plist stores only the command and paths, without credentials. The
+installer uses Python's standard library; the worker requires the prepared venv.
+The user needs a login session and an available host. Use an always-on worker
+host for dependable daily freshness.
 
 ### Linux and hosted workers
 
 Replace both `/opt/recruitment-chatbot` paths in the supplied service with the
-deployment path and build the app image first. The service user needs access to
-the running Docker daemon:
+deployment path and prepare `.venv` first. The service user needs access to
+the project environment and its private credentials:
 
 ```bash
 mkdir -p ~/.config/systemd/user
@@ -1699,8 +1583,8 @@ calibration has not been performed; this check does not establish production acc
 
 ## Automated checks
 
-The suite contains **122 Python tests across 14 modules**, plus **5 browser-control
-checks**: **127 automated checks** in total. It was reduced from 237 Python tests
+The suite contains **119 Python tests across 14 modules**, plus **5 browser-control
+checks**: **124 automated checks** in total. It was reduced from 237 Python tests
 across 30 modules and 6 browser checks. Overlapping helper/UI scenarios, repeated
 validation and model-policy matrices, and tests tied to implementation details
 were removed. Related tests now share feature modules and setup.
@@ -1716,7 +1600,7 @@ confusion-matrix outputs. The automated suite emphasizes these behaviors:
 | `integration/test_guardrails.py`, `test_profiles.py`, `unit/test_documents.py` | Consent, untrusted inputs, redaction, citations, profile isolation/recovery, document formats, safe markup and remote-image validation |
 | `integration/test_observability.py`, `test_suggestions.py` | Conversation JSON, trace/token metadata, retry safety and contextual follow-up persistence/fallbacks |
 | `integration/test_evaluation.py`, `unit/test_evaluation_rules.py` | Labeled splits, leakage prevention, fine-tuning export validation and offline judge reports |
-| `integration/test_streamlit.py`, `unit/test_startup.py` | Role/chat and appointment UI smoke tests, local Docker/native startup and credential preservation |
+| `integration/test_streamlit.py`, `unit/test_startup.py` | Role/chat and appointment UI smoke tests, venv startup, hosted TLS and credential preservation |
 | `unit/test_page_actions.mjs` | Printing, recording/download, cancellation and capture cleanup |
 
 ```bash
@@ -1787,8 +1671,7 @@ for persistent graph checkpoints.
    Its host must be available for the scheduled work.
 
 Cloud deployments connect to hosted PostgreSQL directly and use `requirements.txt`
-and `packages.txt`; Community Cloud does not use this Dockerfile/Compose stack.
-Local Docker deployment is separate from the assignment's Community Cloud target.
+and `packages.txt`. The local application uses the same code through `.venv`.
 Keep credentials, candidate
 data, generated training files, and logs out of version control. Public use with
 real candidates needs the access controls described in [SECURITY.md](SECURITY.md).
@@ -1820,17 +1703,15 @@ data/jobs/                The 11 input PDFs, including the assignment
 tests/                    Automated tests and evaluation notebook
   fixtures/quality_cases.json  Independently authored fictitious quality packets
   fixtures/workflow_cases.json Controlled multi-turn booking cases
-ops/                      Container/native launcher support, daily scheduling and PDF verification
-Dockerfile, .dockerignore  App image with venv/LibreOffice; restricted build context
-compose.yaml              Optional app container; connects to the hosted database
+ops/                      Venv launcher support, daily scheduling and PDF verification
 requirements.txt          All pinned Python dependencies
 packages.txt              LibreOffice system package for Streamlit Community Cloud
-run-full-project.sh       Docker build/bootstrap/launch; --native preserves host venv setup
+run-full-project.sh       Python/venv setup, dependency checks, bootstrap and app launch
 ```
 
 Generated chunks/datasets under `data/processed/`, reports/logs/QA renders under
 `artifacts/`, `.venv/`, and local secrets are ignored by Git. PostgreSQL runtime
-data is retained in its Docker volume or your hosted database.
+data is retained in Neon.
 `artifacts/conversations.json` is the generated conversation snapshot.
 `artifacts/ingestion/.gitkeep` preserves the scheduler's log directory in the repository.
 

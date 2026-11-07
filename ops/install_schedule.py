@@ -2,7 +2,6 @@
 
 import argparse
 import plistlib
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -15,9 +14,6 @@ def main():
         description="Daily job sync at 03:17 (requires Asia/Jerusalem)"
     )
     parser.add_argument("--remove", action="store_true")
-    parser.add_argument(
-        "--native", action="store_true", help="Schedule the host venv instead of Docker"
-    )
     parser.add_argument(
         "--output", type=Path, help="Write a reviewable plist without installing it"
     )
@@ -45,16 +41,13 @@ def main():
             parser.error(
                 "The host timezone must be Asia/Jerusalem; use the timezone-aware systemd example otherwise"
             )
-        if args.native and not (ROOT / ".venv/bin/python").exists():
+        if not (ROOT / ".venv/bin/python").exists():
             parser.error("Create the native project venv first")
-        if not args.native and not shutil.which("docker"):
-            parser.error("Install Docker and build the app with ./run-full-project.sh first")
     logs = ROOT / "artifacts/ingestion"
     logs.mkdir(parents=True, exist_ok=True)
     config = {
         "Label": label,
-        "ProgramArguments": ["/bin/bash", str(ROOT / "ops/run-job-sync.sh")]
-        + (["--native"] if args.native else []),
+        "ProgramArguments": ["/bin/bash", str(ROOT / "ops/run-job-sync.sh")],
         "WorkingDirectory": str(ROOT),
         "StartCalendarInterval": {"Hour": 3, "Minute": 17},
         "StandardOutPath": str(logs / "scheduled.stdout.log"),

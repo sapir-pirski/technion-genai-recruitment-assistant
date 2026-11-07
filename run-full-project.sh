@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Repeatable Docker/native setup and lifecycle commands.
+# Create/reuse the project venv, verify dependencies, and run the app.
 set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 project_root="$PWD"
-native=no
 action=start
 open_browser=yes
 port=""
@@ -14,22 +13,20 @@ phase="argument validation"
 fail() { echo "$1" >&2; exit 1; }
 usage() {
     cat <<'HELP'
-Usage: ./run-full-project.sh [--native] [--port NUMBER] [--no-browser]
-       ./run-full-project.sh [--native] --status|--logs|--stop|--restart
+Usage: ./run-full-project.sh [--port NUMBER] [--no-browser]
+       ./run-full-project.sh --status|--logs|--stop|--restart
 
-Default: cached Docker build, runtime/dependency checks, database readiness,
-conditional PDF ingestion, healthy app startup, then open the browser.
-Native: reuse/install Python 3.11+ (prefer 3.13), repair .venv, install only
-missing/changed requirements, and install LibreOffice when supported.
+Reuse/install Python 3.11+ (prefer 3.13), create/repair .venv, install only
+missing/changed requirements, check hosted PostgreSQL and published PDF indexes,
+start the app, and open the browser after readiness. Install LibreOffice when supported.
 --port is explicit; otherwise reuse this project's port or choose a free one.
---stop preserves data. Native stop affects only this launcher's managed process.
+--stop preserves data and affects only this launcher's managed process.
 PYTHON_BIN selects a native interpreter. No credentials are printed or overwritten.
 HELP
 }
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --help|-h) usage; exit 0 ;;
-        --native) native=yes; shift ;;
         --no-browser) open_browser=no; shift ;;
         --status|--logs|--stop|--restart)
             [[ "$action" == start ]] || fail "Choose one lifecycle action."
@@ -42,8 +39,7 @@ while [[ $# -gt 0 ]]; do
             port="${1#*=}"
             [[ "$port" =~ ^[0-9]+$ ]] && [[ "$port" -ge 1 && "$port" -le 65535 ]] || fail "Use a port between 1 and 65535."
             explicit_port=yes; shift ;;
-        *) [[ "$native" == yes ]] || fail "Unknown option; use --help."
-            streamlit_args+=("$1"); shift ;;
+        *) streamlit_args+=("$1"); shift ;;
     esac
 done
 umask 077
@@ -58,44 +54,6 @@ stage() {
     phase="$1"; shift
     echo "$phase..."
     "$@" >>"$launcher_log" 2>&1
-}
-checksum() {
-    if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@" | awk '{print $1}'
-    elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$@" | awk '{print $1}'
-    else fail "A SHA-256 utility (sha256sum or shasum) is required."
-    fi
-}
-build_fingerprint() {
-    {
-        printf '%s\n' "$APP_UID:$APP_GID"
-        while IFS= read -r input; do
-            case "$input" in */__pycache__/*|*.pyc|*.pyo|*.pyd|*/.DS_Store|*/.env*|*/secrets.toml) continue ;; esac
-            printf '%s\n' "$input"
-            if [[ -f "$input" ]]; then checksum "$input"; else echo missing; fi
-        done < <({
-            printf '%s\n' Dockerfile .dockerignore requirements.txt LICENSE.md .streamlit/config.toml ops/container_entrypoint.py ops/launch_support.py
-            printf '%s\n' tests/fixtures/quality_cases.json tests/fixtures/workflow_cases.json
-            find app streamlit_app -type f 2>/dev/null || true
-        } | LC_ALL=C sort)
-    } | checksum
-}
-ensure_image() {
-    local fingerprint image_id saved_fingerprint saved_image
-    fingerprint="$(build_fingerprint)"
-    image_id="$(docker image inspect --format '{{.Id}}' recruitment-chatbot:local 2>>"$launcher_log" || true)"
-    saved_fingerprint=""; saved_image=""
-    if [[ -f "$runtime/docker-build.state" ]]; then
-        saved_fingerprint="$(sed -n '1p' "$runtime/docker-build.state")"
-        saved_image="$(sed -n '2p' "$runtime/docker-build.state")"
-    fi
-    if [[ -n "$image_id" && "$fingerprint" == "$saved_fingerprint" && "$image_id" == "$saved_image" ]]; then
-        echo "Application image is current; reusing it."
-        return
-    fi
-    stage "Building changed application inputs" docker compose build app
-    image_id="$(docker image inspect --format '{{.Id}}' recruitment-chatbot:local 2>>"$launcher_log")"
-    printf '%s\n%s\n' "$fingerprint" "$image_id" > "$runtime/docker-build.state.tmp"
-    mv "$runtime/docker-build.state.tmp" "$runtime/docker-build.state"
 }
 busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 choose_port() {
@@ -132,26 +90,6 @@ prepare_env() {
         fail "Created .env. Enter OPENAI_API_KEY and the hosted DATABASE_URL, then rerun."
     fi
 }
-docker_ready() {
-    command -v docker >/dev/null 2>&1 || fail "Install Docker with Compose, or use --native with hosted PostgreSQL."
-    docker compose version >>"$launcher_log" 2>&1 || fail "Docker Compose is required."
-    if ! docker info >/dev/null 2>&1; then
-        if [[ "$action" == status || "$action" == stop || "$action" == logs ]]; then
-            echo "Docker is unavailable; check daemon readiness and access permissions. No containers were changed."
-            exit 0
-        fi
-        echo "Starting Docker..."
-        case "$(uname -s)" in
-            Darwin) open -ga Docker >>"$launcher_log" 2>&1 || fail "Start Docker Desktop and rerun." ;;
-            Linux) systemctl --user start docker >>"$launcher_log" 2>&1 || true ;;
-        esac
-        local deadline=$((SECONDS + 90))
-        until docker info >/dev/null 2>&1; do
-            [[ "$SECONDS" -lt "$deadline" ]] || fail "Docker did not become ready. Start its daemon and rerun."
-            sleep 1
-        done
-    fi
-}
 compatible_python() { "$1" -c 'import sys; sys.exit(sys.version_info < (3,11))' >/dev/null 2>&1; }
 find_python() {
     python_bin=""
@@ -185,12 +123,12 @@ converter_ready() {
 install_converter() {
     case "$(uname -s)" in
         Darwin)
-            command -v brew >/dev/null 2>&1 || fail "Homebrew is needed to install native LibreOffice; install it or use Docker mode."
+            command -v brew >/dev/null 2>&1 || fail "Homebrew is needed to install LibreOffice; install it and rerun."
             stage "Installing LibreOffice" brew install --cask libreoffice ;;
         Linux)
             local elevate=()
             if [[ "$(id -u)" != 0 ]]; then
-                command -v sudo >/dev/null 2>&1 || fail "Installing LibreOffice needs sudo or an administrator; Docker mode includes it."
+                command -v sudo >/dev/null 2>&1 || fail "Installing LibreOffice needs sudo or an administrator."
                 sudo -v || fail "Administrator access is needed to install LibreOffice."
                 elevate=(sudo)
             fi
@@ -199,46 +137,13 @@ install_converter() {
                 stage "Installing LibreOffice" ${elevate[@]+"${elevate[@]}"} apt-get install -y libreoffice-writer
             elif command -v dnf >/dev/null 2>&1; then
                 stage "Installing LibreOffice" ${elevate[@]+"${elevate[@]}"} dnf install -y libreoffice-writer
-            else fail "Install LibreOffice with your platform's package manager, or use Docker mode."
+            else fail "Install LibreOffice with your platform's package manager."
             fi ;;
-        *) fail "Automatic native setup supports macOS/Linux/WSL; use Docker on this platform." ;;
+        *) fail "Automatic setup supports macOS/Linux/WSL; install LibreOffice manually on this platform." ;;
     esac
     converter_ready || fail "LibreOffice is still unavailable; check the launcher log."
 }
 
-if [[ "$native" == no ]]; then
-    docker_ready
-    [[ -e .env ]] || {
-        if [[ "$action" == start || "$action" == restart ]]; then prepare_env
-        else fail "No .env exists yet; run the launcher without lifecycle flags first."
-        fi
-    }
-    case "$action" in
-        status) docker compose ps; exit 0 ;;
-        logs) docker compose logs --tail 100 app; exit 0 ;;
-        stop) stage "Stopping the app container" docker compose stop app; echo "Stopped; the hosted database is unchanged."; exit 0 ;;
-    esac
-    export APP_UID="$(id -u)" APP_GID="$(id -g)"
-    existing_port="$(docker compose port app 8501 2>>"$launcher_log" | awk -F: 'NR==1 {print $NF}' || true)"
-    if [[ -n "$existing_port" && "$explicit_port" == no ]]; then port="$existing_port"
-    elif [[ -z "$existing_port" || "$port" != "$existing_port" ]]; then choose_port
-    fi
-    [[ "$port" =~ ^[0-9]+$ ]] || fail "Could not determine the app port."
-    export APP_HTTP_PORT="$port"
-    ensure_image
-    phase="container runtime, requirements and credentials"
-    echo "Checking Python, requirements, credentials and document support..."
-    docker compose run --rm --no-deps -T app --check-config >>"$launcher_log" 2>&1
-    stage "Checking PDFs and published indexes" docker compose run --rm --no-deps -T app python -m app.main bootstrap --if-needed
-    if [[ "$action" == restart ]]; then
-        stage "Restarting the application" docker compose up -d --no-deps --force-recreate --wait --wait-timeout 90 app
-    else
-        stage "Starting or reusing the application" docker compose up -d --no-deps --wait --wait-timeout 90 app
-    fi
-    open_page
-    echo "Use --status, --logs, --stop or --restart for this project."
-    exit 0
-fi
 
 find_python
 if [[ "$action" == status || "$action" == stop || "$action" == logs ]]; then
@@ -281,7 +186,7 @@ phase="native configuration"
 existing_port="$(.venv/bin/python -m ops.launch_support port)"
 if [[ -n "$existing_port" ]]; then
     if [[ "$explicit_port" == yes && "$port" != "$existing_port" && "$action" != restart ]]; then
-        fail "This project already has a managed native app; use --native --restart --port NUMBER."
+        fail "This project already has a managed native app; use --restart --port NUMBER."
     fi
     [[ "$explicit_port" == yes ]] || port="$existing_port"
     if [[ "$action" == restart || "$native_changed" == yes ]]; then
@@ -294,4 +199,4 @@ stage "Checking PDFs and published indexes" .venv/bin/python -m app.main bootstr
 phase="native application readiness"
 port="$(.venv/bin/python -m ops.launch_support start --port "$port" ${streamlit_args[@]+"${streamlit_args[@]}"})"
 open_page
-echo "Use --native --status, --logs, --stop or --restart. App output: artifacts/launcher/native.log"
+echo "Use --status, --logs, --stop or --restart. App output: artifacts/launcher/native.log"

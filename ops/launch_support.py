@@ -40,11 +40,25 @@ def dependencies_ready():
     )
 
 
+def hosted_database_url(value):
+    from sqlalchemy.engine import make_url
+
+    url = make_url(value)
+    if (
+        url.get_backend_name() != "postgresql"
+        or not url.host
+        or url.host in {"localhost", "127.0.0.1", "::1", "postgres"}
+    ):
+        raise ValueError("Use the hosted PostgreSQL database")
+    if url.query.get("sslmode") not in {"require", "verify-ca", "verify-full"}:
+        raise ValueError("The hosted database requires TLS")
+    return url.render_as_string(hide_password=False)
+
+
 def configuration_target():
     from dotenv import dotenv_values
 
     from app.config import Settings
-    from ops.container_entrypoint import container_database_url
 
     values = {**dotenv_values(ROOT / ".env"), **os.environ}
     missing = [
@@ -57,7 +71,7 @@ def configuration_target():
     try:
         settings = Settings()
         settings.require_api_key()
-        container_database_url(settings.database_url)
+        hosted_database_url(settings.database_url)
         return "hosted"
     except RuntimeError:
         raise
@@ -103,7 +117,7 @@ def wait_ready(port, *, pid=None, timeout=90):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if pid and not process_identity(pid):
-            raise RuntimeError("The native app exited. Check --native --logs.")
+            raise RuntimeError("The native app exited. Check --logs.")
         if healthy(port):
             return
         time.sleep(0.5)

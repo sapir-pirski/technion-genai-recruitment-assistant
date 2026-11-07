@@ -5,7 +5,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-# Replace both paths; the user must have access to the running Docker daemon.
+# Replace both paths and prepare the project venv before enabling the service.
 WorkingDirectory=/opt/recruitment-chatbot
 ExecStart=/opt/recruitment-chatbot/ops/run-job-sync.sh
 TimeoutStartSec=90min
