@@ -526,7 +526,6 @@ def render_composer(closed, busy, started):
                     submit_mode="disable",
                     on_submit=submit_message,
                 )
-                st.caption("Messages are saved in this app")
 
 
 def render():
