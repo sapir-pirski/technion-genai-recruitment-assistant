@@ -280,6 +280,10 @@
 }
 @media print {
   .st-key-page_actions, .st-key-suggestions,
+  .st-key-header_controls, .st-key-job_details,
+  .st-key-workspace [data-testid="stExpander"],
+  .st-key-workspace [data-testid="stChatMessageAvatarCustom"],
+  .st-key-workspace button,
   [data-testid="stHeader"], [data-testid="stBottom"] { display: none !important; }
   html, body, #root, .stApp, [data-testid="stAppViewContainer"],
   [data-testid="stMain"], .stMainBlockContainer {
@@ -289,4 +293,11 @@
   .stMainBlockContainer { padding: 0 !important; }
   .st-key-workspace { padding: 0; width: 100% !important; }
   .st-key-workspace [data-testid="stChatMessage"] { break-inside: avoid; }
+  .stApp, .st-key-workspace [data-testid="stChatMessage"] { background: white !important; }
+  .st-key-workspace [data-testid="stChatMessage"]:has([aria-label="Chat message from user"])::before {
+    content: "Candidate"; display: block; font-weight: 700;
+  }
+  .st-key-workspace [data-testid="stChatMessage"]:has([aria-label="Chat message from assistant"])::before {
+    content: "Assistant"; display: block; font-weight: 700;
+  }
 }

@@ -99,6 +99,20 @@ def test_booking_with_question_stays_open(service, now):
     assert reply.action == "continue"
     assert reply.conversation_status == "active"
     assert "scheduling" in reply.advisors and "info" in reply.advisors
+    # A classifier can confuse completed scheduling with disinterest. A SQL
+    # receipt and a pure acknowledgment must retain the scheduled closure reason.
+    plan_turn(
+        service,
+        next_advisor="exit",
+        scheduling_needed=False,
+        info_question=None,
+        stop_requested=True,
+        closure_reason="opt_out",
+    )
+    service.backend.exit_label.return_value = "end"
+    completed = service.turn("alice", "Perfect, thanks!", reference_time=now)
+    assert completed.action == "end" and completed.closure_reason == "scheduled"
+    assert completed.booking == reply.booking
 
 
 def test_unknown_job_information_is_not_invented(service, now):

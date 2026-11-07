@@ -45,7 +45,7 @@ class JobRegistry:
                     source_id="local:assignment",
                     provider="local",
                     board_identifier="assignment",
-                    company_name="Assignment",
+                    company_name="Tech company",
                     enabled=True,
                 )
             )
@@ -56,7 +56,7 @@ class JobRegistry:
                     source_id="local:assignment",
                     external_job_id="original",
                     canonical_url="",
-                    company_name="Assignment",
+                    company_name="Tech company",
                     title="Python Developer",
                     description_text="",
                     first_seen_at=utcnow(),

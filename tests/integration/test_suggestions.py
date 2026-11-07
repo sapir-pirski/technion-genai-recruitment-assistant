@@ -53,10 +53,18 @@ def test_followups_save_export_and_click_as_a_normal_message(service, now, capfd
     assert chosen.text not in capfd.readouterr().err
 
 
-@pytest.mark.parametrize("invalid", ["provider", "duplicate"])
+@pytest.mark.parametrize("invalid", ["provider", "duplicate", "perspective"])
 def test_failed_or_invalid_generation_keeps_the_answer_and_three_fallbacks(service, now, invalid):
     if invalid == "provider":
         service.backend.suggest_followups.side_effect = TimeoutError("private provider details")
+    elif invalid == "perspective":
+        service.backend.suggest_followups.return_value = {
+            "questions": [
+                "What dates or times work for you to schedule an interview?",
+                "Would you like to discuss interview preparation with the recruiter?",
+                "Are there topics you want me to clarify with the recruiter?",
+            ]
+        }
     else:
         questions = [
             "Which skills would I use daily?",

@@ -105,12 +105,14 @@ class Settings(BaseSettings):
             # These defaults target GPT-5 nano and GPT-4o mini. Changing families
             # requires checking the target model's supported API parameters.
             nano = model in {"gpt-5-nano", "gpt-5-nano-2025-08-07"}
-            cap = {"exit": 512, "info_decision": 512, "followups": 768}.get(
+            cap = {"exit": 512, "info_decision": 1024, "followups": 768}.get(
                 operation, self.max_output_tokens
             )
             policy[operation] = {
                 "model": model,
-                "reasoning_effort": ("minimal" if operation == "followups" else "low")
+                "reasoning_effort": (
+                    "minimal" if operation in {"followups", "info_decision"} else "low"
+                )
                 if nano
                 else None,
                 "temperature": None if nano else self.model_temperature,

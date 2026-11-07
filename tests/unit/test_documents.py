@@ -101,6 +101,17 @@ def test_grounded_merge_keeps_evidence_conflicts_and_unknown_python_years():
     assert len([e for e in profile["evidence"] if e["quote"] == "Python"]) == 2
     assert profile["conflicts"][0]["field"] == "identity"
     assert "Explicit years of Python experience" in profile["missing_information"]
+    same_name = merge_profile(
+        [
+            {"source_id": "one", "facts": {**facts, "name": "Alex Example."}},
+            {"source_id": "two", "facts": facts},
+        ]
+    )
+    assert len(same_name["sections"]["name"]) == 1 and not same_name["conflicts"]
+    assert {row["quote"] for row in same_name["evidence"] if row["field"] == "name"} == {
+        "Alex Example.",
+        "Alex Example",
+    }
 
 
 def test_legacy_doc_is_actually_converted_and_read(tmp_path):

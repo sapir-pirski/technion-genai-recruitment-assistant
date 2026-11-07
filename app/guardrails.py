@@ -42,6 +42,13 @@ _UNSAFE_QUESTION = re.compile(
     r"|\b(?:password|api[ _-]?key|private key|credit card|social security|passport number)\b",
     re.IGNORECASE,
 )
+_INTERVIEWER_QUESTION = re.compile(
+    r"^(?:would|do)\s+you\s+(?:like|want)\b"
+    r"|\b(?:what|which)\s+(?:dates?|times?|days?)(?:\s+or\s+(?:dates?|times?|days?))?"
+    r"\s+(?:work|works|suit|suits)\s+(?:best\s+)?for\s+you\b"
+    r"|\byou\s+want\s+me\s+to\b",
+    re.IGNORECASE,
+)
 
 
 class GuardrailViolation(ValueError):
@@ -227,6 +234,13 @@ def check_followups(questions):
             "output",
             "unsafe_suggestion",
             "Use questions about the role or interview preparation.",
+        )
+    if any(_INTERVIEWER_QUESTION.search(text) for text in questions):
+        reject(
+            "suggestion_perspective",
+            "output",
+            "interviewer_question",
+            "Use questions the candidate can ask the assistant.",
         )
     record("suggestion_actions", "output", "allow", "safe_questions")
 

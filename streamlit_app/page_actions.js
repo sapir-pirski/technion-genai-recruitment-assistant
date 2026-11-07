@@ -81,7 +81,9 @@ export default function ({ parentElement, data = {} }) {
     releaseDownload();
     announce('Choose a tab, window or screen to record.');
     try {
-      const capture = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      const capture = await navigator.mediaDevices.getDisplayMedia({
+        video: true, audio: false, preferCurrentTab: true, selfBrowserSurface: 'include',
+      });
       if (disposed) {
         capture.getTracks().forEach(track => track.stop());
         return;

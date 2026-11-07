@@ -194,6 +194,11 @@ def test_operation_selects_model_and_sends_compatible_bounded_parameters(
             assert seen[0]["max_completion_tokens"] == settings.max_output_tokens
             assert "reasoning_effort" not in seen[0]
             seen.clear()
+            content = json.dumps({"decision": "info_not_needed", "question": None})
+            adapter.info_decision(state)
+            assert seen[0]["reasoning_effort"] == "minimal"
+            assert seen[0]["max_completion_tokens"] == 1024
+            seen.clear()
             content = json.dumps(backend.plan.return_value.model_dump())
             adapter.plan(state)
     assert len(seen) == 1

@@ -34,7 +34,9 @@ class JobRetriever:
         versions = self.registry.active_versions(job_id, self.settings.index_collection)
         if not versions:
             return []
-        docs = self.store.similarity_search(query, k=3, job_id=job_id, version_ids=versions)
+        # Include more sections to distinguish required from preferred
+        # qualifications while keeping short job descriptions within the model budget.
+        docs = self.store.similarity_search(query, k=6, job_id=job_id, version_ids=versions)
         return [
             {
                 "id": doc.metadata["chunk_id"],

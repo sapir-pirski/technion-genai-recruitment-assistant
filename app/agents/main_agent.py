@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 
 from app.agents.backends.common import explicit_stop, latest_text
 from app.schemas import Plan, TurnResult
@@ -119,7 +120,22 @@ def make_plan(backend, state: dict) -> dict:
     }
 
 
+def booking_acknowledged(state: dict) -> bool:
+    """A receipt plus a pure closing acknowledgment establishes scheduled completion."""
+    text = " ".join(latest_text(state).casefold().split())
+    return bool(
+        state.get("booking")
+        and re.fullmatch(
+            r"(?:(?:great|perfect|excellent|okay|ok)[,.!]?\s+)?(?:thanks|thank you)"
+            r"(?:[,.!]?\s+(?:that answers (?:all )?my questions|that's all|that is all))?[.!]*",
+            text,
+        )
+    )
+
+
 def should_close(state: dict) -> bool:
+    if booking_acknowledged(state):
+        return False
     plan = state.get("turn_intent") or state.get("plan", {})
     if plan.get("stop_requested"):
         # A profile fact or a Main Agent assertion alone cannot authorize closure.
@@ -158,6 +174,7 @@ def compose(state: dict) -> dict:
         if booking and (
             schedule.get("status") in ("booked", "already_booked")
             or state.get("exit_label") == "end"
+            or booking_acknowledged(state)
         ):
             parts.append(f"Your interview is confirmed for {booking['slot']['label']}.")
             if not intent.get("info_question"):

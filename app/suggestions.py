@@ -70,7 +70,7 @@ def fallback_questions(state):
             priority = [
                 "Which skills would I use most often in this role?",
                 "How could my projects demonstrate these skills?",
-                "Which requirements are essential for this role?",
+                "How can I learn more about the interview process?",
             ]
         elif re.search(r"responsib|work|project|duties", topic):
             priority = [

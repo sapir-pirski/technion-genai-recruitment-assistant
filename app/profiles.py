@@ -21,7 +21,7 @@ from app.schemas import ProfileSections
 MAX_PROFILE_CHARS = 24_000
 MAX_FILE_BYTES = 5 * 1024 * 1024
 MAX_PDF_PAGES = 10
-PIPELINE_VERSION = "candidate-context-v1"
+PIPELINE_VERSION = "candidate-context-v2"
 FIELDS = ("name", "experience", "skills", "education", "projects")
 MEDIA_TYPES = {
     ".pdf": "application/pdf",
@@ -296,7 +296,10 @@ def grounded_sections(
 
 
 def merge_profile(sources, chat_updates=()):
-    result = {field: [] for field in FIELDS}
+    def comparison_key(field, value):
+        key = text_key(value)
+        return key.rstrip(".") if field == "name" else key
+
     evidence = []
     conflicts = []
     references = []
@@ -307,8 +310,6 @@ def merge_profile(sources, chat_updates=()):
             value = (source.get("facts") or {}).get(field)
             excerpts = [value] if field == "name" and value else value or []
             for excerpt in excerpts:
-                if text_key(excerpt) not in {text_key(item) for item in result[field]}:
-                    result[field].append(excerpt)
                 evidence.append(
                     {
                         "fact_id": content_hash(
@@ -354,7 +355,9 @@ def merge_profile(sources, chat_updates=()):
     active = [item for item in evidence if item["status"] == "active"]
     for item in active:
         values = result[item["field"]]
-        if text_key(item["quote"]) not in {text_key(value) for value in values}:
+        if comparison_key(item["field"], item["quote"]) not in {
+            comparison_key(item["field"], value) for value in values
+        }:
             values.append(item["quote"])
     if len(result["name"]) > 1:
         conflicts.append({"field": "identity", "values": result["name"]})

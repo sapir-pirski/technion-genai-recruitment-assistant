@@ -34,7 +34,9 @@ function setup() {
   const state = { prints: 0, picks: 0, blobs: [], revoked: [], recorders: [] };
   const mediaDevices = { async getDisplayMedia(options) {
     state.picks += 1;
-    assert.deepEqual(options, { video: true, audio: false });
+    assert.deepEqual(options, {
+      video: true, audio: false, preferCurrentTab: true, selfBrowserSurface: 'include',
+    });
     return stream;
   } };
   class Recorder {

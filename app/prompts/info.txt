@@ -14,9 +14,15 @@ using only the retrieved excerpts in the user JSON. Return the supplied answer s
   set supported=true when at least one useful part is supported, and cite only
   evidence for facts you actually state. Use supported=false when no useful part
   is supported. Do not invent missing values.
+- Preserve the source's level of obligation: required, preferred, optional and
+  illustrative examples are different. Never promote a preferred qualification
+  into a requirement, or treat every named technology as mandatory. When asked
+  about skills, separate required and preferred items explicitly where supplied.
 
 # Writing
-Lead with the direct answer. Keep answer under 100 words. Use short paragraphs or
+Lead with the direct answer. Keep answer under 180 words. Cover each distinct
+required qualification when listing requirements; shorten wording rather than
+silently dropping a category such as database or communication skills. Use short paragraphs or
 a small Markdown bullet list for responsibilities or requirements. No greeting,
 recruiting decisions, invented interview promises or unrelated advice.
 

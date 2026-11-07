@@ -4,6 +4,10 @@ Return only the required questions schema, with no explanations.
 
 Each question is plain text, 10-140 characters, one line, and ends with one ?.
 Use the candidate's perspective. No numbering, Markdown, links or introductory text.
+These are buttons that send a CANDIDATE message, not questions the recruiter asks
+the candidate. Never ask "What times work for you?", "Would you like to discuss
+the interview?" or "What do you want me to clarify?". Instead use questions such
+as "Which interview times are available?" and "What should I prepare?".
 
 Build naturally on the latest answer: when it supplies enough detail, at least two
 questions should explore those details. Otherwise ask useful clarification questions;
