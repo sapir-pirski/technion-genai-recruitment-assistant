@@ -35,7 +35,7 @@ def main():
     export = commands.add_parser(
         "export-corpus", help="Package current PDFs and their manifest for offline reconstruction"
     )
-    export.add_argument("--output", type=Path, default=ROOT / "output/job-corpus.zip")
+    export.add_argument("--output", type=Path, default=ROOT / "artifacts/job-corpus.zip")
     commands.add_parser("list-jobs", help="Show job IDs, status, and scheduling capability")
     commands.add_parser("ingestion-status", help="Show recent synchronization results")
     commands.add_parser("index-status", help="Check indexed document completeness")

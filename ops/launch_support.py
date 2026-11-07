@@ -10,7 +10,9 @@ import socket
 import subprocess
 import sys
 import time
+from importlib import metadata
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,24 +22,84 @@ SERVER = ROOT / "streamlit_app/streamlit_main.py"
 
 
 def dependencies_ready():
-    commands = [
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "--dry-run",
-            "--no-index",
-            "--quiet",
-            "-r",
-            str(ROOT / "requirements.txt"),
-        ],
-        [sys.executable, "-m", "pip", "check"],
-    ]
-    return all(
-        subprocess.run(command, capture_output=True, timeout=90).returncode == 0
-        for command in commands
+    try:
+        from packaging.requirements import Requirement
+        from packaging.utils import canonicalize_name, parse_wheel_filename
+        from packaging.version import Version
+
+        pending = [
+            Requirement(line)
+            for line in (ROOT / "requirements.txt").read_text().splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        expanded = set()
+        while pending:
+            requirement = pending.pop()
+            if requirement.marker and not requirement.marker.evaluate():
+                continue
+            installed = Version(metadata.version(requirement.name))
+            if installed not in requirement.specifier:
+                return False
+            if requirement.url:
+                filename = unquote(Path(urlsplit(requirement.url).path).name)
+                name, version, _, _ = parse_wheel_filename(filename)
+                if (
+                    canonicalize_name(name) != canonicalize_name(requirement.name)
+                    or version != installed
+                ):
+                    return False
+            identity = (requirement.name, tuple(sorted(requirement.extras)))
+            if requirement.extras and identity not in expanded:
+                expanded.add(identity)
+                for specification in metadata.requires(requirement.name) or []:
+                    dependency = Requirement(specification)
+                    if dependency.marker and not any(
+                        dependency.marker.evaluate({"extra": extra}) for extra in requirement.extras
+                    ):
+                        continue
+                    dependency.marker = None
+                    pending.append(dependency)
+    except (ImportError, metadata.PackageNotFoundError, ValueError, OSError):
+        return False
+    # Do not pass requirements URLs to pip during a readiness check: --no-index
+    # still permits downloading direct references. Installation remains explicit.
+    return (
+        subprocess.run(
+            [sys.executable, "-m", "pip", "check"], capture_output=True, timeout=90
+        ).returncode
+        == 0
     )
+
+
+def exit_model_identity():
+    from app.config import Settings
+
+    settings = Settings()
+    return {
+        "provider": settings.exit_provider,
+        "policy": settings.model_policy()["exit"],
+        "local_path": str(settings.hf_exit_local_path)
+        if settings.exit_provider == "huggingface"
+        else None,
+    }
+
+
+def verify_exit_model():
+    from app.config import Settings
+
+    try:
+        settings = Settings()
+        if settings.exit_provider == "openai":
+            return "Exit Advisor: prompted OpenAI model."
+        from app.agents.backends.huggingface import verify_local_artifact
+
+        verify_local_artifact(settings.hf_exit_local_path, settings.hf_exit_revision)
+    except Exception:
+        raise RuntimeError(
+            "The activated local Exit model is missing, changed or incompatible. "
+            "Restore its verified files in artifacts/hf-exit/ and activate it again."
+        ) from None
+    return "Exit Advisor: locally fine-tuned ModernBERT verified."
 
 
 def hosted_database_url(value):
@@ -69,7 +131,8 @@ def configuration_target():
     if missing:
         raise RuntimeError("Fill in " + ", ".join(missing) + " in .env.")
     try:
-        settings = Settings()
+        # Check credentials independently; model preflight reports activation errors.
+        settings = Settings(exit_provider="openai", hf_exit_revision="")
         settings.require_api_key()
         hosted_database_url(settings.database_url)
         return "hosted"
@@ -141,9 +204,10 @@ def stop_native(*, quiet=False):
         print("Native app stopped; database and files retained.")
 
 
-def start_native(port, extra):
+def runtime_fingerprint(extra):
     digest = hashlib.sha256(sys.version.encode())
     digest.update(json.dumps(extra).encode())
+    digest.update(json.dumps(exit_model_identity(), sort_keys=True).encode())
     environment_file = ROOT / ".env"
     if environment_file.exists():
         info = environment_file.stat()
@@ -153,7 +217,11 @@ def start_native(port, extra):
             if path.is_file() and path.suffix in {".py", ".txt", ".js", ".css", ".toml"}:
                 digest.update(str(path.relative_to(ROOT)).encode())
                 digest.update(path.read_bytes())
-    fingerprint = digest.hexdigest()
+    return digest.hexdigest()
+
+
+def start_native(port, extra):
+    fingerprint = runtime_fingerprint(extra)
     existing = native_state()
     if existing and existing.get("fingerprint") == fingerprint:
         wait_ready(existing["port"], pid=existing["pid"])
@@ -212,7 +280,17 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "action",
-        choices=["dependencies", "config", "port", "status", "start", "stop", "logs", "wait"],
+        choices=[
+            "dependencies",
+            "config",
+            "model",
+            "port",
+            "status",
+            "start",
+            "stop",
+            "logs",
+            "wait",
+        ],
     )
     parser.add_argument("--port", type=int, default=8502)
     args, extra = parser.parse_known_args()
@@ -221,6 +299,8 @@ def main():
             raise SystemExit(0 if dependencies_ready() else 1)
         if args.action == "config":
             print(configuration_target())
+        elif args.action == "model":
+            print(verify_exit_model())
         elif args.action == "port":
             state = native_state()
             print(state["port"] if state else "")

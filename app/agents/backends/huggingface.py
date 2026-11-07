@@ -23,6 +23,25 @@ def _load_files(resolve):
     import onnxruntime as ort
     from tokenizers import Tokenizer
 
+    paths, manifest = _validated_files(resolve)
+    tokenizer = Tokenizer.from_file(paths["tokenizer.json"])
+    tokenizer.enable_truncation(max_length=manifest["max_length"], direction="left")
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = 2
+    session = ort.InferenceSession(
+        paths["model.onnx"], sess_options=options, providers=["CPUExecutionProvider"]
+    )
+    return tokenizer, session, manifest
+
+
+def verify_local_artifact(directory, revision):
+    _, manifest = _validated_files(lambda filename: str(Path(directory) / filename))
+    if manifest["files"]["model.onnx"] != revision:
+        raise ValueError("Exit classifier differs from the configured artifact revision.")
+    return manifest
+
+
+def _validated_files(resolve):
     with open(resolve("exit_classifier.json")) as handle:
         manifest = json.load(handle)
     if (
@@ -41,14 +60,7 @@ def _load_files(resolve):
         if digest != manifest.get("files", {}).get(filename):
             raise ValueError("Exit classifier artifact checksum mismatch.")
         paths[filename] = path
-    tokenizer = Tokenizer.from_file(paths["tokenizer.json"])
-    tokenizer.enable_truncation(max_length=manifest["max_length"], direction="left")
-    options = ort.SessionOptions()
-    options.intra_op_num_threads = 2
-    session = ort.InferenceSession(
-        paths["model.onnx"], sess_options=options, providers=["CPUExecutionProvider"]
-    )
-    return tokenizer, session, manifest
+    return paths, manifest
 
 
 def exit_label(settings, history, *, artifact_path=None):

@@ -18,7 +18,8 @@ Usage: ./run-full-project.sh [--port NUMBER] [--no-browser]
 
 Reuse/install Python 3.11+ (prefer 3.13), create/repair .venv, install only
 missing/changed requirements, check hosted PostgreSQL and published PDF indexes,
-start the app, and open the browser after readiness. Install LibreOffice when supported.
+verify an activated local Exit model, start the app, and open the browser after readiness.
+Install LibreOffice when supported. Startup does not train or download model weights.
 --port is explicit; otherwise reuse this project's port or choose a free one.
 --stop preserves data and affects only this launcher's managed process.
 PYTHON_BIN selects a native interpreter. No credentials are printed or overwritten.
@@ -183,6 +184,8 @@ fi
 converter_ready || install_converter
 phase="native configuration"
 .venv/bin/python -m ops.launch_support config >>"$launcher_log" 2>&1
+phase="Exit Advisor model verification"
+.venv/bin/python -m ops.launch_support model
 existing_port="$(.venv/bin/python -m ops.launch_support port)"
 if [[ -n "$existing_port" ]]; then
     if [[ "$explicit_port" == yes && "$port" != "$existing_port" && "$action" != restart ]]; then

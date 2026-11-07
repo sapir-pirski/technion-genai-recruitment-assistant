@@ -1,41 +1,16 @@
-# Local environment and credentials
-.venv/
-.env
-.env.*
-!.env.example
-.streamlit/secrets.toml
-
-# Python caches, notebook state, and package builds
+# Existing local environment and caches
+/.venv/
+/.env
 __pycache__/
-*.py[cod]
-.pytest_cache/
-.ruff_cache/
-.ipynb_checkpoints/
-*.egg-info/
-build/
-dist/
+/.pytest_cache/
+/.ruff_cache/
+.DS_Store
 
-# Keep source PDFs; ignore generated datasets and other local data
-/data/*
-!/data/jobs/
-/data/jobs/*
-!/data/jobs/*.[pP][dD][fF]
+# Generated benchmark files; data/jobs PDFs remain tracked
+/data/processed/
 
 # Keep the scheduler log directory, but ignore generated contents
 /artifacts/*
 !/artifacts/ingestion/
 /artifacts/ingestion/*
 !/artifacts/ingestion/.gitkeep
-
-# Reports, exports, and local generated files
-*.db
-*.db-*
-*.dump
-*.backup
-.coverage
-.coverage.*
-coverage.xml
-htmlcov/
-/output/
-/ops/*.plist
-.DS_Store

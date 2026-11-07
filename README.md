@@ -35,7 +35,7 @@ matrices, class metrics, majority baseline and disagreement IDs. Saved outputs
 contain no conversation text. A separate live controlled replay passed all 15
 turns across six fictitious cases, including partial availability, strict date limits
 and preferences carried across a week boundary, with zero execution failures.
-The automated suite contains 122 Python tests plus five browser-control checks.
+The automated suite contains 124 Python tests plus five browser-control checks.
 
 A separate validation run on three conversations (12 recruiter turns) scored
 58.3% for Main actions and 91.7% for Exit decisions, with no model/tool failures.
@@ -102,6 +102,10 @@ The launcher checks Python 3.11+ (preferring 3.13), creates or repairs `.venv`,
 installs missing or changed dependencies from `requirements.txt`, checks LibreOffice,
 validates credentials and published PDF indexes, starts Streamlit and opens the
 browser after HTTP readiness. Healthy launches reuse the venv and dependencies.
+An activated local Exit classifier is checked for compatible metadata and file
+checksums before startup. Activation or model identity changes restart the managed
+app. This check does not train, download model weights, or require a Hugging Face
+token for local inference; machines without local activation use the prompted baseline.
 Only new or changed PDFs require embedding calls; ready indexes skip ingestion.
 Online job scraping and model training do not run during startup.
 
@@ -109,8 +113,9 @@ If Python is missing, the script uses the official uv installer from
 `https://astral.sh/uv/install.sh` and installs project-managed Python 3.13 under
 `artifacts/launcher/`. `PYTHON_BIN=python3.13` selects a working interpreter.
 An incomplete venv is preserved under `artifacts/launcher/venv-backup-*` before
-replacement. Missing pip is repaired with `ensurepip`; an offline dependency check
-and `pip check` determine whether installation is needed. Packages are installed
+replacement. Missing pip is repaired with `ensurepip`; installed package versions,
+environment markers, requested extras, direct wheel versions and `pip check`
+determine whether installation is needed without network access. Packages are installed
 only inside the project venv.
 
 Missing LibreOffice is installed through Homebrew on macOS or apt/dnf on supported
@@ -1213,6 +1218,8 @@ database size. Back up PostgreSQL, the PDF folder, and manifest together. A mani
 alone cannot recover deleted PDF content. The manual
 `export-corpus --output PATH` command packages current PDFs and metadata for
 sharing; it does not include bookings, checkpoints, or a database backup.
+Without `--output`, it writes `artifacts/job-corpus.zip` in the existing generated
+artifacts directory.
 
 PDFs are limited to 25 MB and extracted page streams to 20 MB. Scanned or empty
 pages need text-searchable OCR; OCR is not automatic. Generated snapshots include
@@ -1787,8 +1794,10 @@ packages.txt              LibreOffice system package for Streamlit Community Clo
 run-full-project.sh       Python/venv setup, dependency checks, bootstrap and app launch
 ```
 
-Generated chunks/datasets under `data/processed/`, reports/logs/QA renders under
-`artifacts/`, `.venv/`, and local secrets are ignored by Git. PostgreSQL runtime
+The ignore rules cover the existing `.env`, `.venv/`, Python/test/lint caches,
+`.DS_Store`, generated datasets in `data/processed/`, and generated files under
+`artifacts/`, including local models, backups, logs and exports. Source PDFs in
+`data/jobs/` and `.env.example` remain tracked. PostgreSQL runtime
 data is retained in Neon.
 `artifacts/conversations.json` is the generated conversation snapshot.
 `artifacts/ingestion/.gitkeep` preserves the scheduler's log directory in the repository.

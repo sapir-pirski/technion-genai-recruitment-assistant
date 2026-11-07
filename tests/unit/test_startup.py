@@ -4,6 +4,7 @@ import plistlib
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -185,3 +186,79 @@ def test_stale_process_record_never_signals_an_unrelated_process(tmp_path, monke
     monkeypatch.setattr(launcher.os, "killpg", kill)
     launcher.stop_native()
     kill.assert_not_called()
+
+
+def test_dependency_readiness_checks_cpu_wheels_markers_and_extras_without_downloads(
+    tmp_path, monkeypatch
+):
+    from packaging import markers
+
+    (tmp_path / "requirements.txt").write_text(
+        'torch @ https://download.pytorch.org/whl/cpu/torch-2.15.0%2Bcpu-cp313-cp313-manylinux_2_28_x86_64.whl ; sys_platform == "linux"\n'
+        'missing-package==1.0 ; sys_platform == "win32"\n'
+        "psycopg[binary]==3.3.6\n"
+    )
+    environment = {**markers.default_environment(), "sys_platform": "linux"}
+    monkeypatch.setattr(markers, "default_environment", lambda: environment)
+    monkeypatch.setattr(launcher, "ROOT", tmp_path)
+    versions = {"torch": "2.15.0+cpu", "psycopg": "3.3.6", "psycopg-binary": "3.3.6"}
+
+    def installed(name):
+        if name not in versions:
+            raise launcher.metadata.PackageNotFoundError(name)
+        return versions[name]
+
+    monkeypatch.setattr(launcher.metadata, "version", installed)
+    monkeypatch.setattr(
+        launcher.metadata,
+        "requires",
+        lambda name: ['psycopg-binary==3.3.6 ; extra == "binary"', 'unused-pool ; extra == "pool"'],
+    )
+    run = Mock(return_value=SimpleNamespace(returncode=0))
+    monkeypatch.setattr(launcher.subprocess, "run", run)
+    assert launcher.dependencies_ready()
+    assert run.call_args.args[0] == [sys.executable, "-m", "pip", "check"]
+    versions["torch"] = "2.15.0"
+    assert not launcher.dependencies_ready()
+    versions["torch"] = "2.15.0+cpu"
+    versions.pop("psycopg-binary")
+    assert not launcher.dependencies_ready()
+    assert run.call_count == 1
+
+
+def test_model_preflight_and_runtime_identity_follow_local_activation(tmp_path, monkeypatch):
+    monkeypatch.setattr(launcher, "ROOT", tmp_path)
+    identity = {"provider": "openai", "revision": None}
+    monkeypatch.setattr(launcher, "exit_model_identity", lambda: identity)
+    baseline = launcher.runtime_fingerprint([])
+    assert launcher.runtime_fingerprint([]) == baseline
+    identity.update(provider="huggingface", revision="first-trained-artifact")
+    trained = launcher.runtime_fingerprint([])
+    assert trained != baseline and launcher.runtime_fingerprint([]) == trained
+    identity["revision"] = "replacement-trained-artifact"
+    assert launcher.runtime_fingerprint([]) != trained
+
+    settings = SimpleNamespace(
+        exit_provider="huggingface",
+        hf_exit_local_path=tmp_path,
+        hf_exit_revision="verified-revision",
+    )
+    monkeypatch.setattr("app.config.Settings", lambda: settings)
+    verify = Mock()
+    monkeypatch.setattr("app.agents.backends.huggingface.verify_local_artifact", verify)
+    assert "verified" in launcher.verify_exit_model()
+    verify.assert_called_once_with(tmp_path, "verified-revision")
+    verify.side_effect = FileNotFoundError("private-path-and-credential")
+    with pytest.raises(RuntimeError, match="Restore its verified files") as error:
+        launcher.verify_exit_model()
+    assert "private-path-and-credential" not in str(error.value)
+    settings.exit_provider = "openai"
+    verify.reset_mock()
+    assert "OpenAI" in launcher.verify_exit_model()
+    verify.assert_not_called()
+    monkeypatch.setattr(
+        "app.config.Settings", Mock(side_effect=ValueError("private-activation-details"))
+    )
+    with pytest.raises(RuntimeError, match="Restore its verified files") as error:
+        launcher.verify_exit_model()
+    assert "private-activation-details" not in str(error.value)
