@@ -67,12 +67,18 @@ cp -n .env.example .env
 ./run-full-project.sh
 ```
 
-Both `.env` and `.env.example` contain exactly two variables:
+Both `.env` and `.env.example` contain exactly three variables:
 
 | Variable | Purpose |
 |---|---|
 | `OPENAI_API_KEY` | OpenAI access for agents, embeddings and explicitly invoked evaluations |
 | `DATABASE_URL` | The shared hosted PostgreSQL/pgvector connection, with TLS |
+| `HF_TOKEN` | Hugging Face authentication for the planned Exit Advisor training and model repository access |
+
+The selected Hugging Face model is `answerdotai/ModernBERT-base`, to be fine-tuned
+for the Exit Advisor's `end` / `do_not_end` classification. Token setup is prepared;
+training and integration will continue after the token is added. The running app
+currently uses the prompted OpenAI Exit Advisor baseline.
 
 Keep `.env` private. Use the same database connection as Community Cloud, with
 `sslmode=require` or stronger verification. Startup rejects loopback database hosts.
