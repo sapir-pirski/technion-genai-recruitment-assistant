@@ -280,7 +280,7 @@ def export_onnx(settings, output: Path) -> dict:
     return manifest
 
 
-def activate_local(settings) -> dict:
+def activate_local() -> dict:
     from app.agents.backends.huggingface import _load_local
     from app.config import LOCAL_EXIT
 

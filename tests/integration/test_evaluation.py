@@ -11,19 +11,18 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.agents.backends.common import prompt_manifest, prompt_spec
+from app.agents.backends.common import prompt_manifest
 from app.agents.backends.openai import OpenAIBackend
 from app.config import Settings
 from app.evaluation.dataset import SPLIT_NAMES, load_examples, prepare_dataset, split_examples
 from app.evaluation.judge import evaluate_quality
 from app.evaluation.runner import evaluate
 from app.evaluation.workflow import evaluate_workflows
-from app.fine_tuning.jobs import validate_jsonl
 from app.storage.dataset_repository import DatasetRepository
 from app.storage.models import Booking, Conversation, ConversationMessage, DatasetTurn, TraceSpan
 
 
-def test_postgres_dataset_roundtrip_and_training_export(
+def test_postgres_dataset_roundtrip_and_grouped_export(
     benchmark_dataset, benchmark_conversations, tmp_path
 ):
     assert benchmark_dataset.load_conversations() == benchmark_conversations
@@ -36,22 +35,7 @@ def test_postgres_dataset_roundtrip_and_training_export(
     assert manifest["splits"] == {"train": [1], "validation": [2], "test": [3]}
     assert manifest["source_sha256"] == benchmark_conversations[0]["source_sha256"]
     assert len(manifest["dataset_sha256"]) == 64
-    assert manifest["exit_training"]["base_model"] == settings.chat_model
-    assert manifest["exit_training"]["instruction_role"] == "system"
-    assert (
-        manifest["exit_training"]["prompt_sha256"]
-        == prompt_spec("exit", settings.chat_model)["prompt_sha256"]
-    )
     for split in SPLIT_NAMES:
-        assert validate_jsonl(tmp_path / f"exit_{split}.jsonl") == 3
-        training_rows = [
-            json.loads(line) for line in (tmp_path / f"exit_{split}.jsonl").read_text().splitlines()
-        ]
-        spec = prompt_spec("exit", settings.chat_model)
-        assert all(
-            row["messages"][0] == {"role": spec["instruction_role"], "content": spec["content"]}
-            for row in training_rows
-        )
         rows = json.loads((tmp_path / f"{split}.json").read_text())
         assert rows == split_examples(examples, split)
         assert {row["conversation_id"] for row in rows} == set(manifest["splits"][split])

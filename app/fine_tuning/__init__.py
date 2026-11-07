@@ -1,1 +1,1 @@
-"""Exit Advisor training-data export and explicit fine-tuning commands."""
+"""Local ModernBERT fine-tuning, ONNX export and classifier input contracts."""

@@ -58,7 +58,7 @@ def build_chat_profile(backend, repository):
         known = [
             item for item in old.get("evidence", []) if item.get("status", "active") == "active"
         ][-40:]
-        # Older profiles can be read normally; only facts with a stable identity can be revised.
+        # Only facts with a stable identity can be revised.
         known = [item for item in known if item.get("fact_id")]
         last_question = next(
             (

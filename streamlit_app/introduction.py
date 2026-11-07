@@ -108,12 +108,11 @@ def render_profile_status(state):
         return
     labels = {
         "introduction": "Introduction",
-        "linkedin_text": "LinkedIn text",
         "linkedin_reference": "LinkedIn link",
         "file": "Uploaded document",
     }
     used = [
-        source.get("filename") or labels[source["source_kind"]]
+        source.get("filename") or labels.get(source["source_kind"], "Profile text")
         for source in sources
         if source["status"] == "ready"
     ]

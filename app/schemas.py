@@ -37,7 +37,6 @@ class ProfileInputs(StrictModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     introduction: str = ""
     linkedin_url: str = ""
-    linkedin_text: str = ""
     file_name: str | None = None
     file_data: bytes | None = Field(default=None, repr=False)
 

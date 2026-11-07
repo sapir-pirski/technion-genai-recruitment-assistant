@@ -47,12 +47,7 @@ def main():
         action="store_true",
         help="Reuse complete indexes when PDFs and manifest are unchanged",
     )
-    preparation = commands.add_parser(
-        "prepare-data", help="Export grouped splits and Exit Advisor JSONL"
-    )
-    preparation.add_argument(
-        "--base-model", help="Exit training base model; defaults to Settings.chat_model"
-    )
+    commands.add_parser("prepare-data", help="Export conversation-grouped benchmark splits")
     commands.add_parser(
         "export-conversations", help="Regenerate the conversation JSON snapshot from PostgreSQL"
     )
@@ -107,12 +102,6 @@ def main():
         choices=["openai", "huggingface"],
         help="Explicit Exit provider for reproducible baseline comparisons",
     )
-    training = commands.add_parser("fine-tune", help="Submit a paid OpenAI fine-tuning job")
-    training.add_argument("--base-model", required=True)
-    training.add_argument("--training", type=Path, default=ROOT / "data/processed/exit_train.jsonl")
-    training.add_argument(
-        "--validation", type=Path, default=ROOT / "data/processed/exit_validation.jsonl"
-    )
     hf_training = commands.add_parser(
         "fine-tune-hf", help="Train ModernBERT locally on the stored benchmark and export ONNX"
     )
@@ -130,8 +119,6 @@ def main():
     commands.add_parser(
         "activate-exit-hf", help="Activate the validated local Exit artifact on this machine only"
     )
-    job = commands.add_parser("fine-tune-status")
-    job.add_argument("job_id")
     args = parser.parse_args()
     settings = Settings()
     configure_logging(settings.log_level)
@@ -150,8 +137,6 @@ def main():
                 "exit_model": settings.model_for("exit"),
                 "exit_provider": settings.exit_provider,
                 "model_policy": settings.model_policy(),
-                "exit_model_configured": settings.exit_provider == "huggingface"
-                or bool(settings.exit_model),
                 "database_driver": make_url(settings.database_url).drivername,
                 "business_timezone": settings.business_timezone,
                 "dataset_version": settings.dataset_version,
@@ -234,9 +219,7 @@ def main():
         elif args.command == "prepare-data":
             from app.evaluation.dataset import prepare_dataset
 
-            result = prepare_dataset(
-                settings, ROOT / "data/processed", exit_base_model=args.base_model
-            )
+            result = prepare_dataset(settings, ROOT / "data/processed")
         elif args.command == "evaluate":
             if args.exit_provider:
                 settings = settings.model_copy(update={"exit_provider": args.exit_provider})
@@ -272,7 +255,11 @@ def main():
                     raise ValueError("--input is used only with --task quality or workflow")
                 destination = args.output or ROOT / f"artifacts/{args.task}_{args.split}.json"
                 report = evaluate(settings, split=args.split, task=args.task, output=destination)
-                result = {"report": str(destination), "provider": "openai", **report["all_turns"]}
+                result = {
+                    "report": str(destination),
+                    "provider": report["provider"],
+                    **report["all_turns"],
+                }
         elif args.command == "fine-tune-hf":
             from app.fine_tuning.huggingface import export_onnx, train
 
@@ -287,17 +274,7 @@ def main():
         elif args.command == "activate-exit-hf":
             from app.fine_tuning.huggingface import activate_local
 
-            result = activate_local(settings)
-        elif args.command in ("fine-tune", "fine-tune-status"):
-            from app.fine_tuning.jobs import status, submit
-
-            if args.command == "fine-tune":
-                result = submit(settings, args.training, args.validation, args.base_model)
-                destination = ROOT / "artifacts" / f"{result['job_id']}.json"
-                destination.parent.mkdir(exist_ok=True)
-                destination.write_text(json.dumps(result, indent=2))
-            else:
-                result = status(settings, args.job_id)
+            result = activate_local()
         else:
             from app.service import ChatService
 

@@ -177,17 +177,6 @@
 .job-description li { margin-block: 0.35rem; }
 .job-description li > p { margin-bottom: 0.35rem; }
 .job-description li > ul, .job-description li > ol { margin-block: 0.35rem; }
-.st-key-workspace .job-description h2,
-.st-key-workspace .job-description h3,
-.st-key-workspace .job-description h4 {
-  margin: 1.25rem 0 0.5rem;
-  padding: 0;
-  font-weight: 650;
-}
-.st-key-workspace .job-description h2 { font-size: 1.125rem; }
-.st-key-workspace .job-description h3 { font-size: 1.0625rem; }
-.st-key-workspace .job-description h4 { font-size: 1rem; }
-.st-key-workspace .job-description > :first-child { margin-top: 0; }
 .st-key-workspace [data-testid="stChatMessage"] {
   background: var(--ui-surface);
   border: 1px solid var(--ui-border);

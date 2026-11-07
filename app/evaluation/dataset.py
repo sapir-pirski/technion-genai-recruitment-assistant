@@ -5,7 +5,6 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from app.agents.backends.common import prompt_spec
 from app.config import Settings
 from app.storage.database import make_engine
 from app.storage.dataset_repository import DatasetRepository
@@ -100,11 +99,7 @@ def split_examples(examples: list[dict], split: str) -> list[dict]:
     return [item for item in examples if item["split"] == split]
 
 
-def prepare_dataset(
-    settings: Settings, output: Path, *, exit_base_model: str | None = None
-) -> dict:
-    base_model = exit_base_model or settings.chat_model
-    exit_prompt = prompt_spec("exit", base_model)
+def prepare_dataset(settings: Settings, output: Path) -> dict:
     conversations = load_conversations(settings)
     examples = build_examples(conversations)
     actual = {row["conversation_id"] for row in examples}
@@ -132,35 +127,11 @@ def prepare_dataset(
         "turns": sum(len(row["turns"]) for row in conversations),
         "examples": len(examples),
         "labels": dict(Counter(x["label"] for x in examples)),
-        "exit_training": {
-            "base_model": base_model,
-            **{key: value for key, value in exit_prompt.items() if key != "content"},
-        },
     }
     for split in SPLIT_NAMES:
         rows = split_examples(examples, split)
         (output / f"{split}.json").write_text(json.dumps(rows, indent=2))
         (output / f"{split}.json").chmod(0o600)
-        training = [
-            {
-                "messages": [
-                    {"role": exit_prompt["instruction_role"], "content": exit_prompt["content"]},
-                    {
-                        "role": "user",
-                        "content": json.dumps({"history": row["history"]}, ensure_ascii=False),
-                    },
-                    {
-                        "role": "assistant",
-                        "content": "end" if row["label"] == "end" else "do_not_end",
-                    },
-                ]
-            }
-            for row in rows
-        ]
-        (output / f"exit_{split}.jsonl").write_text(
-            "\n".join(json.dumps(row, ensure_ascii=False) for row in training) + "\n"
-        )
-        (output / f"exit_{split}.jsonl").chmod(0o600)
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2))
     (output / "manifest.json").chmod(0o600)
     return manifest

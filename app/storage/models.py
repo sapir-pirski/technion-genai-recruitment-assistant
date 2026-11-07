@@ -91,9 +91,7 @@ class ConversationMessage(CatalogBase):
 class CandidateSource(CatalogBase):
     __tablename__ = "candidate_sources"
     __table_args__ = (
-        CheckConstraint(
-            "source_kind IN ('introduction', 'linkedin_text', 'linkedin_reference', 'file')"
-        ),
+        CheckConstraint("source_kind IN ('introduction', 'linkedin_reference', 'file')"),
         CheckConstraint("status IN ('pending', 'extracted', 'ready', 'reference', 'failed')"),
     )
     source_id: Mapped[str] = mapped_column(String(64), primary_key=True)

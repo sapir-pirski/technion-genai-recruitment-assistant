@@ -174,7 +174,6 @@ class ChatService:
                                 key: redact_credentials(getattr(context_inputs, key), stage="input")
                                 for key in (
                                     "introduction",
-                                    "linkedin_text",
                                     "linkedin_url",
                                     "file_name",
                                 )

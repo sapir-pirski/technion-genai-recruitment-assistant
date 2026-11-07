@@ -21,8 +21,7 @@ def prompt(name: str) -> str:
 
 
 def instruction_role(model: str) -> str:
-    base = model.split(":")[1] if model.startswith("ft:") else model
-    return "developer" if base in {"gpt-5-nano", "gpt-5-nano-2025-08-07"} else "system"
+    return "developer" if model in {"gpt-5-nano", "gpt-5-nano-2025-08-07"} else "system"
 
 
 def prompt_spec(name: str, model: str) -> dict:

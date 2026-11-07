@@ -41,9 +41,6 @@ class DocumentIndexer:
         if settings.chunk_overlap >= settings.chunk_size:
             raise ValueError("CHUNK_OVERLAP must be smaller than CHUNK_SIZE")
 
-    def index_local_pdf(self, path, *, job_id, document_id):
-        return self.index(job_id=job_id, document_id=document_id, pdf_path=path)
-
     @traced("ingestion", "index_document")
     def index(self, *, job_id, document_id, pdf_path, source_url="", job_snapshot=None):
         pdf_path = Path(pdf_path).resolve()
@@ -113,7 +110,6 @@ class DocumentIndexer:
                     "source": pdf_path.name,
                     "source_url": source_url,
                     "text_sha256": digest(chunk.page_content),
-                    "section_heading": "",
                 }
             )
         processed = self.settings.job_data_path / "processed/jobs" / job_id / version_id

@@ -40,9 +40,6 @@ class Settings(BaseSettings):
     chat_model: str = "gpt-4o-mini"
     helper_model: str = "gpt-5-nano"
     judge_model: str = "gpt-4o-mini"
-    # Set this to the returned fine-tuned model ID after a successful training job.
-    # An empty string uses helper_model for the prompted Exit Advisor baseline.
-    exit_model: str = ""
     exit_provider: Literal["openai", "huggingface"] = Field(default_factory=default_exit_provider)
     hf_exit_model: str = "answerdotai/ModernBERT-base (fine-tuned)"
     hf_exit_revision: str = Field(default_factory=local_exit_revision)
@@ -73,7 +70,7 @@ class Settings(BaseSettings):
         if operation == "exit":
             if self.exit_provider == "huggingface":
                 return self.hf_exit_model
-            return self.exit_model or self.helper_model
+            return self.helper_model
         if operation in {"profile_extraction", "followups", "info_decision"}:
             return self.helper_model
         if operation in {"main", "info", "scheduling", "chat_profile"}:

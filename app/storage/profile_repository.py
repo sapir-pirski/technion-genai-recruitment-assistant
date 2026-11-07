@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 
 from app.profiles import (
     MAX_FILE_BYTES,
-    MAX_PROFILE_CHARS,
     MEDIA_TYPES,
     content_hash,
     safe_filename,
@@ -28,14 +27,14 @@ class ProfileRepository:
 
     def stage(self, session, conversation_id, request_id, inputs, occurred_at):
         values = []
-        for kind, value in (
-            ("introduction", inputs.introduction),
-            ("linkedin_text", inputs.linkedin_text),
-        ):
-            if value:
-                values.append(
-                    {"source_kind": kind, "extracted_text": value, "content": value.encode()}
-                )
+        if inputs.introduction:
+            values.append(
+                {
+                    "source_kind": "introduction",
+                    "extracted_text": inputs.introduction,
+                    "content": inputs.introduction.encode(),
+                }
+            )
         if inputs.linkedin_url:
             values.append(
                 {
@@ -66,9 +65,7 @@ class ProfileRepository:
             error = None
             if kind == "file" and (not content or len(content) > MAX_FILE_BYTES):
                 error = ("FileSizeLimit", "Upload a document no larger than 5 MB.")
-            elif kind in {"introduction", "linkedin_text"} and len(value["extracted_text"]) > (
-                4000 if kind == "introduction" else MAX_PROFILE_CHARS
-            ):
+            elif kind == "introduction" and len(value["extracted_text"]) > 4000:
                 error = ("TextLimitExceeded", "Shorten this source before sending another message.")
             elif kind == "linkedin_reference" and len(value["source_url"]) > 500:
                 error = (

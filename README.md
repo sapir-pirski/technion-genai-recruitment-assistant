@@ -160,8 +160,8 @@ conversations. The held-out test below contains 11 recruiter turns.
 | Fine-tuned Exit Advisor · ModernBERT | 9 / 11 | 81.8% | 0 |
 
 **The fine-tuned classifier did not outperform the prompted baseline.** Its two
-errors were false `end` recommendations. The model was selected using validation
-macro F1; test conversations were excluded from training and model selection.
+errors are false `end` recommendations. Checkpoint selection uses validation macro
+F1; test conversations are excluded from training and model selection.
 These are exploratory results from three held-out conversations. Historical
 calendar state and booking receipts were unavailable, so action-label agreement
 does not establish booking correctness.
@@ -170,19 +170,15 @@ The executed **[evaluation notebook](tests/test_evals.ipynb)** includes modern
 annotated confusion matrices, class metrics, baseline comparisons, and error IDs.
 It reads saved reports without making model API calls or exposing conversation text.
 A separate controlled replay passed 15 turns across six fictitious cases. The
-repository defines 124 Python tests and five browser-control checks; the latest
-launcher verification passed all 39 unit checks and two actual launches.
+repository includes 121 Python tests and five browser-control checks.
 
 | Runtime | Exit Advisor | Model storage |
 |---|---|---|
 | **Locally activated training machine** | Fine-tuned ModernBERT, using ONNX Runtime on CPU. | Git-ignored `artifacts/hf-exit/`; no model upload. |
 | **Community Cloud / fresh checkout** | Prompted OpenAI baseline. | No trained weights or HF token copied to the deployment. |
 
-OpenAI fine-tuning was attempted and rejected with `403 training_not_available`;
-the uploaded files were deleted. The local HF model implements the fine-tuning
-objective with a different provider. Training, data isolation, model integrity,
-limitations, and the original OpenAI route are documented in the
-[fine-tuning reference](#reference-evaluation).
+Training, data isolation, model integrity and evaluation limitations are documented
+in the [fine-tuning reference](#reference-evaluation).
 
 ## Project layout
 
@@ -356,7 +352,6 @@ Configure application behavior in the `Settings` class in
 | `chat_model` | `gpt-4o-mini` for Main planning, cited job answers, scheduling tool calls and chat-profile revisions |
 | `helper_model` | `gpt-5-nano` for Info classification, prompted OpenAI Exit baseline, profile extraction and follow-up questions |
 | `judge_model` | `gpt-4o-mini` for explicitly invoked offline quality evaluation |
-| `exit_model` | Empty string uses the prompted helper-model baseline; set a supported returned model ID after fine-tuning |
 | `exit_provider` | `huggingface` when this machine has an explicit local activation receipt; otherwise `openai` |
 | `hf_exit_local_path` | `artifacts/hf-exit/runtime/`; local ONNX weights, tokenizer and integrity manifest |
 | `embedding_model` / `embedding_dimensions` | `text-embedding-3-small` / `None` uses the model's default dimensions |
@@ -373,19 +368,16 @@ Configure application behavior in the `Settings` class in
 | `chunk_size` / `chunk_overlap` / `pipeline_version` | 900 / 120 characters / `jobs-v1` |
 
 Restart the app or notebook kernel after changing configuration. Model access
-depends on your account. Chat, retrieval queries, document embeddings, evaluation,
-and explicitly submitted fine-tuning jobs can incur API usage charges.
+depends on your account. Chat, retrieval queries, document embeddings and evaluation
+can incur API usage charges. Local training uses the host’s CPU and memory.
 
 `Settings.model_policy()` is the single operation-to-model policy. Main planning,
 Info answers, Scheduling and chat-profile revisions use GPT-4o mini. The independent
 Info decision, source fact extraction and three-question generation use GPT-5
 nano. The prompted OpenAI Exit baseline also uses nano; the locally activated
-Exit Advisor uses its fine-tuned ModernBERT classifier instead. Live chat-revision checks found nano could exhaust the 1,500-token completion
-budget; that structured operation uses the existing non-reasoning chat model. Nano uses
+Exit Advisor uses its fine-tuned ModernBERT classifier instead. Nano uses
 `reasoning_effort="low"` for classification and profile extraction, and
-`"minimal"` for follow-ups, and omits temperature. Live checks found that minimal
-effort could incorrectly decline a clear role question or paraphrase profile
-excerpts, so those actions use low effort. Generative OpenAI requests use
+`"minimal"` for follow-ups, and omits temperature. Generative OpenAI requests use
 `max_completion_tokens`: Exit and Info decisions are capped at 512, follow-ups at
 768, and planning, answers, scheduling and profile extraction at 1,500; lowering
 `max_output_tokens` lowers these caps too. Completion limits include reasoning
@@ -448,12 +440,6 @@ evaluate these models before those dates; do not silently switch a running app.
 See the [official deprecations](https://developers.openai.com/api/docs/deprecations).
 GPT-5 nano remains the prompted Exit baseline used by Community Cloud. The local
 ModernBERT classifier is fine-tuned, with results and limitations below.
-The original OpenAI fine-tuning route remains unavailable to this organization;
-see
-[fine-tuning availability](https://developers.openai.com/api/docs/guides/supervised-fine-tuning).
-
-
-
 The local ModernBERT classifier has no generative prompt or sampling parameters. Its trace records the versioned history-input contract and artifact SHA-256 instead.
 
 </details>
@@ -645,14 +631,12 @@ confirmation references the particular supported claim; ambiguous yes replies ca
 choose between conflicts. Confirmation records what the candidate affirmed and does
 not verify credentials externally. Superseded evidence stays in the audit history.
 
-Chat updates and verification are JSON inside the existing `candidate_profiles.data`
-column; no new tables or migration scripts are needed. Later source changes preserve
-chat updates. Checkpointing extraction before publication lets a failed profile write
+Chat updates and verification are JSON inside `candidate_profiles.data`. Source
+changes preserve chat updates. Checkpointing extraction before publication lets a failed profile write
 resume without repeating a completed model call. A chat-extraction failure is traced
 and leaves the prior profile intact; the candidate can restate the information.
-The obsolete generated experience-summary field has been removed. Profile content
-is untrusted background data and cannot request scheduling, alter tools, or establish
-job requirements.
+Profile content is untrusted background data and cannot request scheduling, alter
+tools, or establish job requirements.
 Only Main receives the derived candidate profile. Calendar and information-decision
 model requests use actual conversation history and their task context without
 copying background documents into those advisors' prompts.
@@ -807,13 +791,12 @@ nonexistent or duration-changing daylight-saving times require different hours.
 Every appointment must start in the future. An invalid request, duplicate or
 overlapping appointment rejects the entire addition. Per-job database locking
 serializes concurrent calendar additions. Existing appointments, including booked
-or unavailable ones, remain intact. Future legacy slots without durations must be
-resolved before overlap validation can proceed. The selected job must be active
-with scheduling enabled; calendar management does not enable imported jobs.
+or unavailable ones, remain intact. Future slots require a duration for overlap
+validation. The selected job must be active with scheduling enabled; calendar management does not enable imported jobs.
 
 These commands use PostgreSQL without calling OpenAI. Run the project launcher
-first to initialize storage. Calendar operations use existing application modules;
-no new tables, environment variables or migration commands are needed.
+first to initialize storage. Calendar operations use the application’s SQL
+repositories and per-job locks.
 
 Availability searches apply job, date, local-time, morning/afternoon and declined
 slot filters in SQL before limiting results. With no date preference, the next
@@ -828,8 +811,7 @@ Resolved preferences live in the existing graph checkpoint JSON under
 and request ID. A follow-up such as “morning works” reuses the original resolved
 date even after a week boundary. An explicitly repeated relative date is resolved
 against the new turn. “Any day” clears the date, “any time” clears time preferences,
-and “no preferences” clears all constraints. No new database tables or environment
-variables are required. With a period but no exact time, ranking uses 09:00 for
+and “no preferences” clears all constraints. With a period but no exact time, ranking uses 09:00 for
 morning or 15:00 for afternoon; a bare date uses local midnight.
 
 If an offered appointment is taken before confirmation, the tool refreshes
@@ -840,11 +822,8 @@ consent. An exhausted calendar reports that a recruiter needs to add availabilit
 These lookups remain inside the existing calendar tool and Scheduling Advisor
 node and add no model calls.
 
-Scheduling, conversation and CLI tests cover the calendar update. Live database checks verified
-status, an addition with `--dry-run`, and alternative lookup with an empty OpenAI
-key. All 161 stored slots, the existing booking, other application records, input
-PDFs and credentials were preserved; the schema remains at 22 tables. The local
-verification report is `artifacts/calendar-verification.json` (Git ignored).
+Scheduling, conversation and CLI tests cover calendar additions, availability
+queries, explicit acceptance and booking conflicts.
 
 </details>
 
@@ -1035,10 +1014,8 @@ inputs and mocked models to cover injection through profiles, unauthorized SQL
 writes, fabricated receipts/citations, credential redaction before display/export,
 unsafe suggestions and legitimate mixed information/booking requests.
 
-Guardrail checks run with Ruff lint/format validation, isolated PostgreSQL
-databases and mocked models; no
-stored private conversations were sent to OpenAI for this verification. Retry
-recovery also reuses the redacted message without repeating completed model work.
+Guardrail tests use isolated PostgreSQL databases and mocked models. Retry
+recovery reuses the redacted message without repeating completed model work.
 
 </details>
 
@@ -1119,7 +1096,7 @@ separately from bounded HTTP transport retries.
 
 Chunk IDs are `<document_version_id>:<chunk_index>`. Metadata includes job,
 document and version IDs, zero-based chunk index, one-based PDF page, PDF basename,
-source URL, and chunk-text hash. `section_heading` is reserved and currently blank.
+source URL, and chunk-text hash.
 Retrieval uses exact cosine distance filtered by collection, job, and published
 version IDs. Dimensions are checked against the collection before writes, so
 incompatible vectors cannot mix. Changing model, dimensions, pipeline, or chunking
@@ -1130,20 +1107,11 @@ LangGraph manages four tables in this same database: `checkpoints`,
 thread/parent continuity across restarts. `checkpoint_migrations` is LangGraph's
 internal setup bookkeeping and remains required by its checkpoint saver.
 
-All 22 tables were transferred to Neon in one transaction after backups of both
-databases were restored and verified. Existing local slot IDs were retained so
-bookings and checkpoints keep their references; cloud ingestion history was merged.
-Every expected row was checked before commit. PDF paths were normalized for shared
-use by the venv and cloud runtimes. There are no retained migration
-scripts or upgrade hooks.
-
-The transfer preserved 4 conversations, 10 messages, 1 booking, 161 stored slots,
-15 benchmark conversations, 103 benchmark turns, all checkpoints and logs, and the
-11 published PDFs with 57 RAG chunks. These counts describe the transfer snapshot;
-normal app use changes operational records. The original local database is retired.
-Private, restore-tested archives and their checksums remain under
-`artifacts/backups/`, excluded from Git and shared artifacts. Transfer evidence is
-in the ignored `artifacts/cloud-transfer-verification.json`.
+All 22 tables use the same hosted Neon PostgreSQL connection. Document versions
+store PDF bytes for retrieval and downloads; the worker reads input PDFs from
+`data/jobs/`. Runtime records, benchmark data and checkpoint state stay in this
+database. Private backup archives belong under Git-ignored `artifacts/backups/`;
+restore them into a separate recovery database and verify them before use.
 
 </details>
 
@@ -1167,7 +1135,7 @@ It also stores `suggested_questions: [{id, text}, ...]` and `suggestion_source`
 for a fixed starter. Clicks are validated against this conversation's latest saved
 answer (or the fixed starters before any answer), including the exact question text.
 Stale, tampered and other-conversation selections are rejected. These fields use
-existing JSONB metadata; no additional database tables or schema transfer is needed.
+message JSONB metadata.
 
 Each turn has a trace ID and a root span. Child spans cover agents, composition,
 model calls, retrieval, and calendar tools. Ingestion and evaluation also have
@@ -1213,13 +1181,13 @@ Usage semantics follow the [OpenAI API reference](https://developers.openai.com/
 Unreported usage from failed requests or SDK-internal retries is not estimated;
 these records are not a complete billing ledger.
 
-The existing span `attributes` JSONB also records `reasoning_effort`,
+Span `attributes` JSONB also records `reasoning_effort`,
 `max_completion_tokens` for structured/Exit calls, provider-reported
 `reasoning_tokens`, `price_version`, and `estimated_cost_usd`. The estimator uses
 the returned model/snapshot, subtracts cached tokens from uncached input and uses
 output tokens once, including reasoning. Unknown models, fine-tuned IDs or missing
 usage/cache counts produce a null estimate. Embeddings need only reported input
-usage. Historical trace rows are not rewritten, and no new tables are required.
+usage.
 These amounts estimate reported calls; SDK-internal retries and unreported failed
 requests can make the provider bill higher.
 
@@ -1255,7 +1223,7 @@ stdout. Fields include timestamp, severity, event, component, trace/span IDs,
 conversation/request IDs, duration, and error code. The formatter excludes
 arbitrary logging arguments, exception text, credentials, connection strings, and
 conversation contents. Configure `log_level` in `app/config.py`; `DEBUG` includes
-individual span completions. No new environment variables or monitoring services are required.
+individual span completions.
 
 After a completed or failed turn, the application regenerates
 `artifacts/conversations.json` from PostgreSQL. It follows the supplied dataset's
@@ -1288,9 +1256,8 @@ python -m app.main export-conversations
 ```
 
 The generated file contains private conversation text and is ignored by Git.
-Recording starts with new turns after this feature is installed; older checkpoint
-messages are not assigned invented timestamps. Records remain until explicitly
-removed, and the JSON snapshot includes all recorded conversations in that database.
+Records retain their captured timestamps until explicitly removed. The JSON
+snapshot includes all recorded conversations in that database.
 
 </details>
 
@@ -1588,13 +1555,14 @@ system for hosted operation; the app sends no automatic email or Slack alerts.
 
 The trained model is `answerdotai/ModernBERT-base`, base revision
 `8949b909ec900327062f0ebf497f51aef5e6f0c8`. Training updates the encoder and binary
-classification head using the original 9 training and 3 validation conversations.
+classification head using 9 training and 3 validation conversations.
 Test conversations are excluded from gradients, checkpoint selection and export
 selection. The five-epoch run uses seed 42, batch size 4, AdamW at learning rate
-0.00002, weight decay 0.01 and training-derived class weights. Validation macro F1
-selected epoch 4 (0.8992), breaking ties with loss; validation accuracy was 11/12.
-Test accuracy was 9/11, with zero failures and confusion matrix `[[6, 2], [0, 3]]`
-in `do_not_end`, `end` order. The saved prompted baseline scored 11/11.
+0.00002, weight decay 0.01 and training-derived class weights. Selection uses
+validation macro F1, breaking ties with loss. The selected checkpoint is epoch 4:
+validation macro F1 is 0.8992 and validation accuracy is 11/12.
+Test accuracy is 9/11, with zero failures and confusion matrix `[[6, 2], [0, 3]]`
+in `do_not_end`, `end` order. The saved prompted baseline scores 11/11.
 
 Training and inference share one input contract: candidate/assistant history as
 role/content JSON, at most 12 recent messages and 16,000 history characters.
@@ -1603,7 +1571,7 @@ recent context up to 2,048 tokens. Target labels, future replies, timestamps and
 profile documents are excluded. The classifier advises Main; opt-out, booking
 receipt and conversation-closure guards remain enforced by LangGraph.
 
-All dependencies remain in `requirements.txt`, including training/export tools.
+All dependencies are in `requirements.txt`, including training/export tools.
 Python 3.13 on Linux/x86-64 uses an official CPU-only PyTorch wheel. Inference
 imports ONNX Runtime and tokenizers without loading PyTorch or Transformers.
 The 267 MB export uses per-channel dynamic INT8 matrix weights and float32
@@ -1635,14 +1603,13 @@ locally. This provider difference is recorded in evaluation and tracing metadata
 decision and latency without input text. Tokens are marked nonbillable; zero API
 cost refers to local inference and excludes hardware cost.
 
-#### Supplied benchmark and original OpenAI training route
+#### Benchmark and dataset preparation
 
 The supplied labeled dataset is stored in PostgreSQL as version `assignment-v1`:
 15 conversations, 103 turns, and 59 labeled recruiter turns (25 continue,
 19 schedule, 15 end). There are 15 opening messages and 44 replies to candidate
-messages. The one-time import preserved original IDs, timestamps, text, labels,
-contact metadata, and the 9/3/3 conversation split. The original source fingerprint
-is retained in the database; no dataset JSON or import script remains in the repository.
+messages. Records retain source IDs, timestamps, text, labels, contact metadata,
+the source fingerprint and the 9/3/3 conversation split.
 
 Set `dataset_version` in `app/config.py` to select a verified benchmark version.
 Preparation, evaluation, and the notebook read these two database tables directly.
@@ -1682,59 +1649,17 @@ See the official [PostgreSQL backup tool documentation](https://www.postgresql.o
 python -m app.main prepare-data
 ```
 
-Generated files in `data/processed/` include a hashed manifest, grouped prefixes,
-and Exit Advisor JSONL. The manifest records the dataset version, original source
+Generated files in `data/processed/` include a hashed manifest and conversation-grouped
+`train.json`, `validation.json` and `test.json` prefixes. The manifest records the dataset version, original source
 hash, current snapshot hash, and stored split IDs. The assignment benchmark retains
 36/12/11 labeled examples in its 9/3/3 conversation partitions. Inputs exclude target responses, future turns, annotations, and phone
-metadata; phone/email patterns are redacted. Few-shot prompt illustrations were
-authored separately from evaluation examples.
-
-`prepare-data --base-model MODEL` chooses the Exit export's instruction role for
-that base model; without the flag it uses `Settings.chat_model`. The export
-manifest's `exit_training` records that model, prompt hash and role. A returned
-fine-tuned GPT-4.1 mini ID uses system instructions at runtime; the prompted nano
-baseline uses developer instructions. Both use the same current Exit prompt and
-history JSON format. Submission rejects stale prompt text or a role inconsistent
-with the selected base model before uploading any files. Regenerate exports after
-editing Exit instructions, and compare/retrain a fine-tuned model with matching
-instructions. Format validation does not establish model fine-tuning eligibility.
+metadata; phone/email patterns are redacted. Few-shot prompt illustrations are
+independent of evaluation examples.
 
 The Exit Advisor emits exactly `end` or `do_not_end`, covering disinterest and
-successful closure. Its recommendation cannot bypass booking validation.
-OpenAI fine-tuning requires account access and a supported base model; this original
-provider route remains outstanding. The local Hugging Face training above is complete.
-
-```bash
-python -m app.main prepare-data --base-model YOUR_SUPPORTED_BASE_MODEL
-python -m app.main fine-tune --base-model YOUR_SUPPORTED_BASE_MODEL
-python -m app.main fine-tune-status YOUR_JOB_ID
-```
-
-The authorized 7 November submission used `gpt-4.1-mini-2025-04-14`, 36 training
-examples, 12 validation examples and three supervised epochs. The estimate was
-13,895 training tokens per epoch at $5 per million tokens, approximately $0.21;
-actual provider billing can differ. Job creation returned HTTP 403
-`training_not_available`, so no job or model ID exists. Both uploaded files were
-deleted after that definitive rejection. The prepared exports and rejection metadata
-remain local and Git ignored. Fine-tuning access is restricted; see the official
-[availability guidance](https://developers.openai.com/api/docs/guides/supervised-fine-tuning)
-and [pricing](https://developers.openai.com/api/docs/pricing). An eligible account is
-required to finish this assignment requirement; a valid chat key alone is insufficient.
-
-Uploads are tracked from the first successful file creation. If the next upload
-fails, known earlier files are deleted. A definitive job rejection also cleans
-known uploads; failure to delete one file does not skip another or mask the original
-error. A timeout or uncertain job-creation response triggers a lookup by model and
-exact upload IDs. A matching job is recovered; otherwise files are retained because
-a training job may still be using them. Technical incident metadata and remaining
-file IDs are saved with mode `0600` in the Git-ignored
-`artifacts/fine-tuning-submission.json`. Inspect the provider before retrying an
-uncertain submission, to avoid duplicate paid training jobs.
-
-Submission is explicit and paid; startup never trains models. Job metadata is saved
-in `artifacts/`. After success, set `Settings.exit_model` in `app/config.py` to
-the returned model ID. Use an empty string for the prompted baseline. Restart the
-app or notebook kernel after configuration changes.
+successful closure. Its recommendation cannot bypass booking validation. Local
+Hugging Face training reads the stored benchmark directly; startup never trains
+models. Evaluate the prompted baseline with an explicit provider:
 
 ```bash
 python -m app.main evaluate --split test --task actions --exit-provider openai --output artifacts/actions_test_baseline.json
@@ -1743,7 +1668,7 @@ python -m app.main evaluate --split test --task exit --exit-provider openai --ou
 
 The required [evaluation notebook](tests/test_evals.ipynb) includes accuracy,
 confusion matrices, per-class metrics, a training-derived majority baseline, and
-error analysis. All twelve code cells were executed successfully on 7 November, including the local Hugging Face comparison.
+error analysis, including the local Hugging Face comparison.
 The notebook reads saved reports and the PostgreSQL benchmark; it makes no model calls.
 One shared styling cell provides consistent typography, blue/teal bars and confusion
 heatmaps with counts and row shares on a fixed 0–100% color scale. Figures include
@@ -1892,9 +1817,9 @@ unscored ratings. With no references, agreement is null, not a fabricated percen
 Scores supplied as human references are caller annotations; code cannot verify who
 authored them. Review disagreements before relying on the judge at scale.
 
-Existing PostgreSQL trace spans store root `evaluation/quality` and child `llm/judge`
-metadata, model/prompt identity, latency, tokens and reported estimated cost. No new
-tables, checkpoint threads or conversation messages are created. Technical traces
+PostgreSQL trace spans store root `evaluation/quality` and child `llm/judge`
+metadata, model/prompt identity, latency, tokens and reported estimated cost.
+Quality evaluation does not create checkpoint threads or conversation messages. Technical traces
 omit questions, answers, excerpts, judge reasons and reference scores. The report
 is atomically replaced with owner-only permissions and ignored by Git; keep it
 private because model reasons may quote evaluated content. Costs exclude unreported
@@ -1911,11 +1836,9 @@ The fixture command sends only its fictitious packets to OpenAI. For other files
 obtain authorization to transmit their contents before running the command; it
 does not automatically select or send the stored private benchmark.
 
-A live six-case fixture run on 7 November 2026 completed with recorded usage
-and valid references. The saved
-quality report (`artifacts/quality_evaluation.json`, generated locally and Git ignored) captures that run. Conversations,
-bookings, calendar slots, dataset records and RAG chunks were unchanged. Human
-calibration has not been performed; this check does not establish production accuracy.
+The private saved quality report (`artifacts/quality_evaluation.json`) contains
+six fictitious cases, recorded usage and validated references. Human calibration
+is not available; fixture results do not establish production accuracy.
 
 </details>
 
@@ -1925,11 +1848,8 @@ calibration has not been performed; this check does not establish production acc
 
 ### Automated checks
 
-The suite contains **119 Python tests across 14 modules**, plus **5 browser-control
-checks**: **124 automated checks** in total. It was reduced from 237 Python tests
-across 30 modules and 6 browser checks. Overlapping helper/UI scenarios, repeated
-validation and model-policy matrices, and tests tied to implementation details
-were removed. Related tests now share feature modules and setup.
+The suite contains **121 Python tests across 14 modules**, plus **5 browser-control
+checks**: **126 automated checks** in total.
 
 The required `tests/test_evals.ipynb` is executed, with saved accuracy and
 confusion-matrix outputs. The automated suite emphasizes these behaviors:
@@ -1941,7 +1861,7 @@ confusion-matrix outputs. The automated suite emphasizes these behaviors:
 | `integration/test_rag.py` | PDF ingestion/update/rename/removal, job isolation, atomic publication, repair, JSONB ingestion outcomes, startup readiness and logo refresh |
 | `integration/test_guardrails.py`, `test_profiles.py`, `unit/test_documents.py` | Consent, untrusted inputs, redaction, citations, profile isolation/recovery, document formats, safe markup and remote-image validation |
 | `integration/test_observability.py`, `test_suggestions.py` | Conversation JSON, trace/token metadata, retry safety and contextual follow-up persistence/fallbacks |
-| `integration/test_evaluation.py`, `unit/test_evaluation_rules.py` | Labeled splits, leakage prevention, fine-tuning export validation and offline judge reports |
+| `integration/test_evaluation.py`, `unit/test_evaluation_rules.py` | Labeled splits, leakage prevention, local classifier integrity, grouped benchmark exports and offline judge reports |
 | `integration/test_streamlit.py`, `unit/test_startup.py` | Role/chat and appointment UI smoke tests, venv startup, hosted TLS and credential preservation |
 | `unit/test_page_actions.mjs` | Printing, recording/download, cancellation and capture cleanup |
 
@@ -1985,23 +1905,19 @@ pinned in the single `requirements.txt`; update it directly and rerun checks.
 
 <a id="reference-deployment"></a>
 <details>
-<summary><strong>Community Cloud deployment and verification record</strong></summary>
+<summary><strong>Community Cloud deployment</strong></summary>
 
 ### Deployment
 
 Community Cloud is explicitly required by [TASK.md](TASK.md). The application is
 [deployed here](https://technion-genai-recruitment-assistant.streamlit.app) with
 Python 3.13 and the repository’s `streamlit_app/streamlit_main.py` entry point.
-The PostgreSQL 17 project has been claimed on Neon’s Free plan in Frankfurt,
-with no expiry. Its 22-table schema contains the 11 public job PDFs, 57 active
-RAG chunks and the complete calendar/history, including the private benchmark,
-conversations, bookings, logs and checkpoints. All 22 tables were transferred with
-row verification; the local database and its volume are retired.
-The live app passed health, sourced-answer, follow-up, scheduling and opt-out checks.
-Its checkpoint was recovered through a fresh database connection. The smoke test
-made no booking and used only public job questions. Credentials and provisioning
-records stay Git ignored; use the direct connection with TLS and channel binding
-for persistent graph checkpoints.
+The hosted database is PostgreSQL 17/pgvector on Neon in Frankfurt. Its 22-table
+schema stores the job catalog, 57 active RAG chunks, recruiter calendar, bookings,
+conversations, benchmark, logs and graph checkpoints. Credentials and provisioning
+records stay Git ignored. Use the provider’s direct connection with TLS and channel
+binding for persistent graph checkpoints. Cloud uses the prompted OpenAI Exit
+Advisor; the local fine-tuned model stays on its training machine.
 
 1. Use the source and PDF inputs in this GitHub repository. Keep credentials,
    benchmark records, generated exports, conversation files and local reports excluded.
@@ -2023,66 +1939,6 @@ and `packages.txt`. The local application uses the same code through `.venv`.
 Keep credentials, candidate
 data, generated training files, and logs out of version control. Public use with
 real candidates needs the access controls described in [SECURITY.md](SECURITY.md).
-
-### Status
-
-The local application implements the Main/Advisor workflow, SQL booking tools,
-PDF retrieval, incremental ingestion, daily synchronization, candidate profile
-updates, guardrails, conversation JSON and token/latency traces. The corpus has
-11 PDFs and 57 published chunks with 1,536-dimensional OpenAI embeddings. All
-application and vector records share one PostgreSQL database with 22 tables.
-
-The action evaluation was rerun after the fixes on 7 November 2026 using the
-authorized redacted benchmark and its unchanged held-out split of three conversations.
-The saved Exit predictions were rescored with failure-aware metrics without
-additional Exit model calls:
-
-| Evaluation | Correct / evaluated | Accuracy | Model/tool failures |
-|---|---|---|---|
-| Main workflow, all recruiter turns | 6 / 11 | 54.5% | 0 |
-| Main workflow, candidate-response turns only | 3 / 8 | 37.5% | 0 |
-| Prompted Exit Advisor, all recruiter turns | 11 / 11 | 100% | 0 |
-| Locally fine-tuned ModernBERT Exit Advisor | 9 / 11 | 81.8% | 0 |
-
-These are exploratory results on a small sample. No verified historical calendar
-or slot receipts were supplied; the evaluation uses an empty isolated calendar.
-The executed [evaluation notebook](tests/test_evals.ipynb) contains the confusion
-matrices, class metrics, majority baseline and disagreement IDs. Saved outputs
-contain no conversation text. A separate live controlled replay passed all 15
-turns across six fictitious cases, including partial availability, strict date limits
-and preferences carried across a week boundary, with zero execution failures.
-The automated suite contains 124 Python tests plus five browser-control checks.
-
-A separate validation run on three conversations (12 recruiter turns) scored
-58.3% for Main actions and 91.7% for Exit decisions, with no model/tool failures.
-Candidate-response accuracy was 44.4% and 88.9%, respectively. These small-sample
-label comparisons do not establish booking correctness or production quality.
-
-Fine-tuning was attempted with `gpt-4.1-mini-2025-04-14`; OpenAI rejected creation
-with HTTP 403, `training_not_available`. Both uploaded files were deleted. No
-OpenAI fine-tuned model is claimed. The prepared OpenAI training estimate
-was approximately $0.21 for three epochs, excluding evaluation calls.
-
-The Exit Advisor was subsequently fine-tuned locally from `answerdotai/ModernBERT-base`.
-It used 36 training examples and 12 validation examples, retaining the original
-conversation splits. Validation macro F1 selected epoch 4 of 5. The held-out result
-is 9/11 correct (81.8%), including two false `end` recommendations; candidate-response
-accuracy is 6/8 (75%). This underperforms the saved prompted baseline on the small test.
-The selected model and its compact ONNX export remain on this machine, excluded from
-Git and all external model repositories. Only the local application uses this model
-after explicit activation; Community Cloud retains the prompted OpenAI Exit Advisor.
-This is a Hugging Face implementation of the fine-tuning objective, rather than an
-OpenAI fine-tuning job; assignment acceptance of that provider substitution should
-be confirmed with the instructor.
-
-The [live Streamlit app](https://technion-genai-recruitment-assistant.streamlit.app)
-uses PostgreSQL 17/pgvector on Neon’s Free plan in Frankfurt. The database is claimed
-by the owner with no expiry. All 22 tables share that database, including the public
-job/RAG catalog, calendar, bookings, conversations, benchmark, logs and checkpoints.
-Live checks verified sourced answers, three follow-up
-questions, timezone-aware interview choices, opt-out and persistent checkpoints.
-The complete local database was transferred and verified on 7 November 2026;
-private data remains excluded from Git. Verified backup archives stay local.
 
 </details>
 
@@ -2108,14 +1964,15 @@ publishers. Generated snapshots preserve attribution and capture time; they are
 not employer-issued PDFs, endorsements, or a grant of redistribution rights.
 The MIT license for this project's code does not relicense third-party content.
 
-`app/ingestion/fonts/DejaVuSans.ttf` and `DejaVuSans-Bold.ttf` are DejaVu fonts,
-obtained from the installed Matplotlib distribution. Their Bitstream Vera and
+The regular, bold, oblique and bold-oblique DejaVu Sans fonts in
+`app/ingestion/fonts/` are DejaVu fonts,
+bundled from the Matplotlib distribution. Their Bitstream Vera and
 DejaVu notices and license are reproduced in
 [LICENSE_DEJAVU.txt](app/ingestion/fonts/LICENSE_DEJAVU.txt). These fonts are bundled
 for reproducible PDF generation with accented characters and symbols.
 
 Python dependencies retain their own licenses. The supplied conversation dataset,
-now stored in PostgreSQL, and the assignment PDF in `data/jobs/` retain their owners' rights.
+stored in PostgreSQL, and the assignment PDF in `data/jobs/` retain their owners' rights.
 
 </details>
 

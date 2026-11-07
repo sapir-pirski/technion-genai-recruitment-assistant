@@ -52,7 +52,7 @@ def make_plan(backend, state: dict) -> dict:
         for key, value in (state.get("plan") or fallback_plan(state).model_dump()).items()
         if key in Plan.model_fields
     }
-    previous.setdefault("closure_reason", None)  # Read older checkpoints without rewriting them.
+    previous.setdefault("closure_reason", None)
     reason = None
     rerouted_from = None
     if state.get("error"):

@@ -53,6 +53,7 @@ def load_settings():
 @st.cache_resource
 def create_service(_settings, configuration_identity):
     """Cache the advisor-loop service for this application configuration."""
+    # Streamlit hashes configuration_identity; the SecretStr settings stay out of its cache key.
     return ChatService(_settings)
 
 

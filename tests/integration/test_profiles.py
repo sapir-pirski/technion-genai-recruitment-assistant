@@ -17,15 +17,13 @@ def sections(*, experience=(), skills=(), name=None):
 
 def test_all_sources_are_automatic_idempotent_and_not_fake_messages(service, now):
     values = {
-        "introduction": "3.5 years of Python experience.",
+        "introduction": "3.5 years of Python experience. Skills: Python, SQL",
         "linkedin_url": "https://linkedin.com/in/alex-example?trk=test",
-        "linkedin_text": "Skills: Python, SQL",
         "file_name": "cv.txt",
         "file_data": b"Projects with Django",
     }
     service.backend.extract_profile.side_effect = [
-        sections(experience=["3.5 years of Python experience."]),
-        sections(skills=["Python", "SQL"]),
+        sections(experience=["3.5 years of Python experience."], skills=["Python", "SQL"]),
         sections(experience=["Projects with Django"], skills=["Django"]),
     ]
     first = service.turn(
@@ -42,14 +40,14 @@ def test_all_sources_are_automatic_idempotent_and_not_fake_messages(service, now
         == first
     )
     service.turn("auto", "What next?", context_inputs=values, reference_time=now)
-    assert service.backend.extract_profile.call_count == 3
+    assert service.backend.extract_profile.call_count == 2
     service.backend.schedule.assert_not_called()
     export = json.loads(service.settings.conversation_export_path.read_text())[0]
     assert export["turns"][0]["text"] == "Hello" and len(export["turns"]) == 4
-    assert len(export["sources"]) == 4 and export["profile"]["status"] == "ready"
+    assert len(export["sources"]) == 3 and export["profile"]["status"] == "ready"
     assert all("input_data" not in source for source in export["sources"])
     with Session(service.registry.engine) as session:
-        assert session.scalar(select(func.count()).select_from(CandidateSource)) == 4
+        assert session.scalar(select(func.count()).select_from(CandidateSource)) == 3
         assert session.scalar(select(func.count()).select_from(CandidateProfile)) == 1
         assert all(row.input_data is None for row in session.scalars(select(CandidateSource)))
         spans = list(

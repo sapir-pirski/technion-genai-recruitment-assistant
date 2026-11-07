@@ -1,4 +1,4 @@
-"""Validate all PDF content/layout and render pages for visual inspection (dev dependencies)."""
+"""Validate PDF content and layout, and render pages for visual inspection."""
 
 import argparse
 import hashlib
