@@ -34,7 +34,7 @@ matrices, class metrics, majority baseline and disagreement IDs. Saved outputs
 contain no conversation text. A separate live controlled replay passed all 15
 turns across six fictitious cases, including partial availability, strict date limits
 and preferences carried across a week boundary, with zero execution failures.
-The automated suite contains 121 Python tests plus five browser-control checks.
+The automated suite contains 122 Python tests plus five browser-control checks.
 
 A separate validation run on three conversations (12 recruiter turns) scored
 58.3% for Main actions and 91.7% for Exit decisions, with no model/tool failures.
@@ -46,11 +46,12 @@ with HTTP 403, `training_not_available`. Both uploaded files were deleted. No
 fine-tuned model or fine-tuned comparison is claimed. The prepared training estimate
 was approximately $0.21 for three epochs, excluding evaluation calls.
 
-Streamlit Community Cloud deployment has resumed. GitHub deployment access is
-authorized, and a PostgreSQL 17 database has been claimed on Neon’s Free plan.
-Database initialization and cloud verification are in progress.
-Local Docker PostgreSQL is inaccessible from Community Cloud. No working cloud
-URL is claimed until deployment and its database checks complete.
+The [live Streamlit app](https://technion-genai-recruitment-assistant.streamlit.app)
+uses PostgreSQL 17/pgvector on Neon’s Free plan in Frankfurt. The database is claimed
+by the owner with no expiry. Its public job/RAG catalog and 128 future approved
+appointments are initialized. Live checks verified sourced answers, three follow-up
+questions, timezone-aware interview choices, opt-out and persistent checkpoints.
+No local candidate histories, bookings or private benchmark rows were transferred.
 
 ## Install and run
 
@@ -1354,6 +1355,15 @@ The database must also be running; use `docker compose up -d --wait postgres` fo
 the local database. The existing PostgreSQL lease prevents overlapping native and
 containerized sync runs. Use `./ops/run-job-sync.sh --native` for a prepared host venv.
 
+For the hosted app, `./ops/run-job-sync.sh --hosted` uses the prepared host venv
+and reads `database_url` from the owner-only, Git-ignored file
+`artifacts/hosted-database-connection.json`. It checks the PostgreSQL host and TLS
+setting before running the same ingestion pipeline. The OpenAI key still comes
+from `.env`; no extra environment variables or migration scripts are needed.
+Use `--hosted --offline` to recheck existing PDFs without fetching sources.
+The hosted worker refreshes PDFs, embeddings, descriptions and company assets;
+it does not create availability or alter bookings.
+
 ### macOS
 
 The installer schedules the current user's LaunchAgent at **03:17 Asia/Jerusalem**.
@@ -1371,11 +1381,27 @@ launchctl print gui/$(id -u)/com.recruitment.job-sync
 python3 ops/install_schedule.py --remove
 ```
 
+The hosted companion uses a separate LaunchAgent at **03:37 Asia/Jerusalem**,
+20 minutes after the local worker. Both are installed on this development machine.
+The schedule contains only the worker command; database passwords and API keys
+are not embedded in the plist. The hosted worker requires the project venv and
+private connection file, and does not require Docker.
+
+```bash
+# Preview/install the hosted companion; the local schedule stays in place.
+python3 ops/install_schedule.py --hosted --output /tmp/cloud-job-sync.plist
+python3 ops/install_schedule.py --hosted
+launchctl print gui/$(id -u)/com.recruitment.job-sync-cloud
+# Run now, or remove only the hosted schedule.
+./ops/run-job-sync.sh --hosted
+python3 ops/install_schedule.py --hosted --remove
+```
+
 The installer itself uses only Python's standard library; `--native` selects the
 host venv worker. An existing default LaunchAgent automatically uses the updated
-Docker worker script at its next run. The user must have a login session and a
-running Docker daemon. Use an always-on host for dependable daily
-freshness; a powered-off or logged-out machine cannot provide that service.
+Docker worker script at its next run. The user must have a login session. The Docker worker also needs a
+running Docker daemon; the hosted worker uses the venv directly. Use an always-on
+host for dependable daily freshness; a powered-off or logged-out machine cannot provide that service.
 
 ### Linux and hosted workers
 
@@ -1678,8 +1704,8 @@ calibration has not been performed; this check does not establish production acc
 
 ## Automated checks
 
-The suite contains **121 Python tests across 14 modules**, plus **5 browser-control
-checks**: **126 automated checks** in total. It was reduced from 237 Python tests
+The suite contains **122 Python tests across 14 modules**, plus **5 browser-control
+checks**: **127 automated checks** in total. It was reduced from 237 Python tests
 across 30 modules and 6 browser checks. Overlapping helper/UI scenarios, repeated
 validation and model-policy matrices, and tests tied to implementation details
 were removed. Related tests now share feature modules and setup.
@@ -1736,25 +1762,34 @@ pinned in the single `requirements.txt`; update it directly and rerun checks.
 
 ## Deployment
 
-Community Cloud is explicitly required by [TASK.md](TASK.md). Deployment has
-resumed with authorization for Streamlit terms and its GitHub deployment scopes.
+Community Cloud is explicitly required by [TASK.md](TASK.md). The application is
+[deployed here](https://technion-genai-recruitment-assistant.streamlit.app) with
+Python 3.13 and the repository’s `streamlit_app/streamlit_main.py` entry point.
 The PostgreSQL 17 project has been claimed on Neon’s Free plan in Frankfurt,
-with no expiry. Database initialization and end-to-end cloud verification are in
-progress. Credentials and provisioning records stay Git ignored; use the direct
-connection with TLS and channel binding for persistent graph checkpoints.
+with no expiry. Its 22-table schema contains the 11 public job PDFs, 57 active
+RAG chunks and 128 future approved interview slots. Retrieval and citation checks
+passed. No local candidate histories, bookings or benchmark rows were copied.
+The live app passed health, sourced-answer, follow-up, scheduling and opt-out checks.
+Its checkpoint was recovered through a fresh database connection. The smoke test
+made no booking and used only public job questions. Credentials and provisioning
+records stay Git ignored; use the direct connection with TLS and channel binding
+for persistent graph checkpoints.
 
 1. Use the source and PDF inputs in this GitHub repository. Keep credentials,
    benchmark records, generated exports, conversation files and local reports excluded.
 2. Select `streamlit_app/streamlit_main.py` and Python 3.13.
 3. Provision persistent PostgreSQL with pgvector; configure TLS according to the provider.
 4. Set `OPENAI_API_KEY` and `DATABASE_URL` through deployment secrets.
+   `POSTGRES_PASSWORD` belongs to local Docker and is not needed in Community Cloud.
 5. Initialize the hosted schema and run ingestion against that database before use.
    Transfer only the intended role configuration and recruiter-approved availability;
    do not copy local candidate histories, bookings or private benchmark records by default.
    Verify retrieval, timezone handling, booking confirmation/concurrency, opt-out and
    checkpoint recovery. The existing local database and volume stay intact.
-6. Run daily ingestion on a worker with shared durable PDFs/manifest and the same
-   database and application configuration.
+6. Run daily ingestion on a worker with durable PDFs/manifest and the hosted
+   database connection. The installed macOS hosted companion runs at 03:37
+   Asia/Jerusalem; Community Cloud itself does not run this background schedule.
+   Its host must be available for the scheduled work.
 
 Cloud deployments connect to hosted PostgreSQL directly and use `requirements.txt`
 and `packages.txt`; Community Cloud does not use this Dockerfile/Compose stack.

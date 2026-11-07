@@ -1,6 +1,8 @@
 import json
 import os
+import plistlib
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -11,6 +13,65 @@ from ops import launch_support as launcher
 from ops.container_entrypoint import container_database_url
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_hosted_worker_requires_private_remote_credentials_and_keeps_them_out_of_schedule(tmp_path):
+    worker = tmp_path / "ops/run-job-sync.sh"
+    worker.parent.mkdir()
+    worker.write_bytes((ROOT / "ops/run-job-sync.sh").read_bytes())
+    python = tmp_path / ".venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text(f'#!/bin/bash\nexec "{sys.executable}" "$@"\n')
+    python.chmod(0o755)
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "__init__.py").touch()
+    (app / "main.py").write_text(
+        "import json,os,sys\nfrom pathlib import Path\n"
+        "Path('received.json').write_text(json.dumps({'url':os.environ['DATABASE_URL'],"
+        "'arguments':sys.argv[1:]}))\n"
+    )
+    credentials = tmp_path / "artifacts/hosted-database-connection.json"
+    credentials.parent.mkdir()
+    remote = "postgresql://worker:fictitious-secret@example.test/jobs?sslmode=require"
+    command = ["bash", str(worker), "--hosted", "--offline"]
+    missing = subprocess.run(command, capture_output=True, text=True)
+    assert missing.returncode == 1 and "owner-only" in missing.stderr
+    credentials.write_text(json.dumps({"database_url": remote}))
+    credentials.chmod(0o600)
+    ready = subprocess.run(command, capture_output=True, text=True)
+    assert ready.returncode == 0, ready.stderr
+    received = json.loads((tmp_path / "received.json").read_text())
+    assert received == {
+        "url": remote,
+        "arguments": ["sync-jobs", "--trigger", "scheduled", "--cleanup", "--offline"],
+    }
+    for unsafe_url, mode in [
+        (remote, 0o644),
+        ("postgresql://worker:fake@localhost/jobs", 0o600),
+        (remote.replace("sslmode=require", "sslmode=disable"), 0o600),
+    ]:
+        credentials.write_text(json.dumps({"database_url": unsafe_url}))
+        credentials.chmod(mode)
+        failed = subprocess.run(command, capture_output=True, text=True)
+        assert failed.returncode == 1 and unsafe_url not in failed.stderr
+    output = tmp_path / "cloud.plist"
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "ops/install_schedule.py"),
+            "--hosted",
+            "--output",
+            str(output),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    config = plistlib.loads(output.read_bytes())
+    assert config["Label"] == "com.recruitment.job-sync-cloud"
+    assert config["ProgramArguments"][-1] == "--hosted"
+    assert config["StartCalendarInterval"] == {"Hour": 3, "Minute": 37}
+    assert "EnvironmentVariables" not in config and remote not in str(config)
 
 
 def test_container_url_preserves_credentials_and_hosted_options():
