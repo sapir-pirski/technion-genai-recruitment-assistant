@@ -1416,8 +1416,11 @@ python -m app.main evaluate --split test --task exit --output artifacts/exit_tes
 
 The required [evaluation notebook](tests/test_evals.ipynb) includes accuracy,
 confusion matrices, per-class metrics, a training-derived majority baseline, and
-error analysis. All eleven code cells were executed successfully on 7 November.
-The notebook reads saved reports and the local benchmark; it makes no model calls.
+error analysis. All twelve code cells were executed successfully on 7 November.
+The notebook reads saved reports and the PostgreSQL benchmark; it makes no model calls.
+One shared styling cell provides consistent typography, blue/teal bars and confusion
+heatmaps with counts and row shares on a fixed 0–100% color scale. Figures include
+crisp PNG and SVG notebook outputs; chart styling does not change saved metrics.
 On a fresh checkout, restore the private benchmark, run `prepare-data` and explicitly
 run the evaluation commands above with authorized data to create the ignored reports.
 Then execute the notebook. Share its aggregate outputs rather than private examples.
