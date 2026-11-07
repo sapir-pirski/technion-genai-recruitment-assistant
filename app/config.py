@@ -1,5 +1,7 @@
 import hashlib
+import json
 from pathlib import Path
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from pydantic import Field, SecretStr, field_validator
@@ -7,6 +9,23 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
 ROOT = Path(__file__).resolve().parents[1]
+LOCAL_EXIT = ROOT / "artifacts/hf-exit/runtime"
+
+
+def local_exit_revision():
+    manifest = LOCAL_EXIT / "exit_classifier.json"
+    if not manifest.is_file():
+        return ""
+    return json.loads(manifest.read_text())["files"]["model.onnx"]
+
+
+def default_exit_provider():
+    activation = ROOT / "artifacts/hf-exit/active.json"
+    if not activation.is_file():
+        return "openai"
+    if json.loads(activation.read_text()).get("artifact_sha256") != local_exit_revision():
+        raise ValueError("The local Exit artifact changed; verify and activate it again.")
+    return "huggingface"
 
 
 class Settings(BaseSettings):
@@ -14,6 +33,7 @@ class Settings(BaseSettings):
 
     # Credentials belong in .env or the deployment's secret settings.
     openai_api_key: SecretStr = SecretStr("")
+    hf_token: SecretStr = SecretStr("")
     database_url: str = Field(default="", repr=False)
 
     # Configure application behavior here instead of duplicating defaults in .env.
@@ -23,6 +43,10 @@ class Settings(BaseSettings):
     # Set this to the returned fine-tuned model ID after a successful training job.
     # An empty string uses helper_model for the prompted Exit Advisor baseline.
     exit_model: str = ""
+    exit_provider: Literal["openai", "huggingface"] = Field(default_factory=default_exit_provider)
+    hf_exit_model: str = "answerdotai/ModernBERT-base (fine-tuned)"
+    hf_exit_revision: str = Field(default_factory=local_exit_revision)
+    hf_exit_local_path: Path = LOCAL_EXIT
     embedding_model: str = "text-embedding-3-small"
     job_sources_path: Path = ROOT / "config/job_sources.json"
     job_manifest_path: Path = ROOT / "config/job_corpus_manifest.json"
@@ -47,6 +71,8 @@ class Settings(BaseSettings):
         if operation == "judge":
             return self.judge_model
         if operation == "exit":
+            if self.exit_provider == "huggingface":
+                return self.hf_exit_model
             return self.exit_model or self.helper_model
         if operation in {"profile_extraction", "followups", "info_decision"}:
             return self.helper_model
@@ -68,6 +94,17 @@ class Settings(BaseSettings):
             "judge",
         ):
             model = self.model_for(operation)
+            if operation == "exit" and self.exit_provider == "huggingface":
+                policy[operation] = {
+                    "provider": "huggingface",
+                    "model": model,
+                    "revision": self.hf_exit_revision,
+                    "task": "text-classification",
+                    "reasoning_effort": None,
+                    "temperature": None,
+                    "max_completion_tokens": None,
+                }
+                continue
             # These defaults target GPT-5 nano and GPT-4o mini. Changing families
             # requires checking the target model's supported API parameters.
             nano = model in {"gpt-5-nano", "gpt-5-nano-2025-08-07"}

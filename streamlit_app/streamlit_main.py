@@ -538,7 +538,9 @@ def render():
     if "conversation_id" not in st.session_state:
         st.session_state.conversation_id = str(uuid4())
     identity = hashlib.sha256(
-        settings.model_dump_json().encode() + settings.openai_api_key.get_secret_value().encode()
+        settings.model_dump_json().encode()
+        + settings.openai_api_key.get_secret_value().encode()
+        + settings.hf_token.get_secret_value().encode()
     ).hexdigest()
     try:
         service = create_service(settings, identity)

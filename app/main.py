@@ -102,11 +102,33 @@ def main():
         "--limit", type=int, default=20, help="Maximum quality cases, 1-200 (default: 20)"
     )
     evaluation.add_argument("--output", type=Path)
+    evaluation.add_argument(
+        "--exit-provider",
+        choices=["openai", "huggingface"],
+        help="Explicit Exit provider for reproducible baseline comparisons",
+    )
     training = commands.add_parser("fine-tune", help="Submit a paid OpenAI fine-tuning job")
     training.add_argument("--base-model", required=True)
     training.add_argument("--training", type=Path, default=ROOT / "data/processed/exit_train.jsonl")
     training.add_argument(
         "--validation", type=Path, default=ROOT / "data/processed/exit_validation.jsonl"
+    )
+    hf_training = commands.add_parser(
+        "fine-tune-hf", help="Train ModernBERT locally on the stored benchmark and export ONNX"
+    )
+    hf_training.add_argument("--output", type=Path, default=ROOT / "artifacts/hf-exit")
+    hf_training.add_argument("--epochs", type=int, choices=range(1, 21), default=5)
+    hf_training.add_argument("--seed", type=int, default=42)
+    hf_evaluate = commands.add_parser(
+        "evaluate-exit-hf", help="Evaluate a local Exit artifact without uploading data"
+    )
+    hf_evaluate.add_argument("--artifact", type=Path, default=ROOT / "artifacts/hf-exit/runtime")
+    hf_evaluate.add_argument("--split", choices=["validation", "test"], default="test")
+    hf_evaluate.add_argument(
+        "--output", type=Path, default=ROOT / "artifacts/exit_test_huggingface.json"
+    )
+    commands.add_parser(
+        "activate-exit-hf", help="Activate the validated local Exit artifact on this machine only"
     )
     job = commands.add_parser("fine-tune-status")
     job.add_argument("job_id")
@@ -126,8 +148,10 @@ def main():
                 "helper_model": settings.helper_model,
                 "judge_model": settings.judge_model,
                 "exit_model": settings.model_for("exit"),
+                "exit_provider": settings.exit_provider,
                 "model_policy": settings.model_policy(),
-                "exit_model_configured": bool(settings.exit_model),
+                "exit_model_configured": settings.exit_provider == "huggingface"
+                or bool(settings.exit_model),
                 "database_driver": make_url(settings.database_url).drivername,
                 "business_timezone": settings.business_timezone,
                 "dataset_version": settings.dataset_version,
@@ -214,6 +238,8 @@ def main():
                 settings, ROOT / "data/processed", exit_base_model=args.base_model
             )
         elif args.command == "evaluate":
+            if args.exit_provider:
+                settings = settings.model_copy(update={"exit_provider": args.exit_provider})
             if args.task == "workflow":
                 from app.evaluation.workflow import evaluate_workflows
 
@@ -247,6 +273,21 @@ def main():
                 destination = args.output or ROOT / f"artifacts/{args.task}_{args.split}.json"
                 report = evaluate(settings, split=args.split, task=args.task, output=destination)
                 result = {"report": str(destination), "provider": "openai", **report["all_turns"]}
+        elif args.command == "fine-tune-hf":
+            from app.fine_tuning.huggingface import export_onnx, train
+
+            result = train(settings, args.output, epochs=args.epochs, seed=args.seed)
+            result["export"] = export_onnx(settings, args.output)
+        elif args.command == "evaluate-exit-hf":
+            from app.evaluation.runner import evaluate_local_exit
+
+            result = evaluate_local_exit(
+                settings, args.artifact, split=args.split, output=args.output
+            )
+        elif args.command == "activate-exit-hf":
+            from app.fine_tuning.huggingface import activate_local
+
+            result = activate_local(settings)
         elif args.command in ("fine-tune", "fine-tune-status"):
             from app.fine_tuning.jobs import status, submit
 

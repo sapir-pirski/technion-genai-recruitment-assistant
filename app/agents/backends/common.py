@@ -36,7 +36,7 @@ def prompt_spec(name: str, model: str) -> dict:
 
 
 def prompt_manifest(settings) -> dict:
-    return {
+    manifest = {
         operation: {
             key: value
             for key, value in prompt_spec(name, settings.model_for(operation)).items()
@@ -44,6 +44,11 @@ def prompt_manifest(settings) -> dict:
         }
         for operation, name in OPERATION_PROMPTS.items()
     }
+    if settings.exit_provider == "huggingface":
+        from app.fine_tuning.exit_data import classifier_spec
+
+        manifest["exit"] = classifier_spec(settings.hf_exit_model, settings.hf_exit_revision)
+    return manifest
 
 
 def latest_text(state: dict) -> str:

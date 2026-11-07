@@ -3,7 +3,12 @@ import json
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 
-from app.agents.backends.common import OPERATION_PROMPTS, model_context, prompt_spec
+from app.agents.backends.common import (
+    OPERATION_PROMPTS,
+    model_context,
+    prompt_manifest,
+    prompt_spec,
+)
 from app.config import Settings
 from app.guardrails import model_data
 from app.observability.tracing import span
@@ -31,11 +36,9 @@ class OpenAIBackend:
         self.prompts = {
             operation: prompt_spec(name, self.policy[operation]["model"])
             for operation, name in OPERATION_PROMPTS.items()
+            if operation != "exit" or settings.exit_provider == "openai"
         }
-        self.prompt_manifest = {
-            operation: {key: value for key, value in spec.items() if key != "content"}
-            for operation, spec in self.prompts.items()
-        }
+        self.prompt_manifest = prompt_manifest(settings)
 
         def client(operation):
             policy = self.policy[operation]
@@ -47,7 +50,7 @@ class OpenAIBackend:
 
         self.chat = client("main")
         self.helper = client("profile_extraction")
-        self.exit = client("exit")
+        self.exit = client("exit") if settings.exit_provider == "openai" else None
         self.judge_client = client("judge")
 
     def _messages(self, operation, data):
@@ -144,6 +147,10 @@ class OpenAIBackend:
             return schema.model_validate(response["parsed"])
 
     def exit_label(self, history: list[dict]) -> str:
+        if self.settings.exit_provider == "huggingface":
+            from app.agents.backends.huggingface import exit_label
+
+            return exit_label(self.settings, history)
         with span(
             "llm",
             "exit",

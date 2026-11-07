@@ -26,6 +26,7 @@ additional Exit model calls:
 | Main workflow, all recruiter turns | 6 / 11 | 54.5% | 0 |
 | Main workflow, candidate-response turns only | 3 / 8 | 37.5% | 0 |
 | Prompted Exit Advisor, all recruiter turns | 11 / 11 | 100% | 0 |
+| Locally fine-tuned ModernBERT Exit Advisor | 9 / 11 | 81.8% | 0 |
 
 These are exploratory results on a small sample. No verified historical calendar
 or slot receipts were supplied; the evaluation uses an empty isolated calendar.
@@ -34,7 +35,7 @@ matrices, class metrics, majority baseline and disagreement IDs. Saved outputs
 contain no conversation text. A separate live controlled replay passed all 15
 turns across six fictitious cases, including partial availability, strict date limits
 and preferences carried across a week boundary, with zero execution failures.
-The automated suite contains 119 Python tests plus five browser-control checks.
+The automated suite contains 122 Python tests plus five browser-control checks.
 
 A separate validation run on three conversations (12 recruiter turns) scored
 58.3% for Main actions and 91.7% for Exit decisions, with no model/tool failures.
@@ -43,8 +44,20 @@ label comparisons do not establish booking correctness or production quality.
 
 Fine-tuning was attempted with `gpt-4.1-mini-2025-04-14`; OpenAI rejected creation
 with HTTP 403, `training_not_available`. Both uploaded files were deleted. No
-fine-tuned model or fine-tuned comparison is claimed. The prepared training estimate
+OpenAI fine-tuned model is claimed. The prepared OpenAI training estimate
 was approximately $0.21 for three epochs, excluding evaluation calls.
+
+The Exit Advisor was subsequently fine-tuned locally from `answerdotai/ModernBERT-base`.
+It used 36 training examples and 12 validation examples, retaining the original
+conversation splits. Validation macro F1 selected epoch 4 of 5. The held-out result
+is 9/11 correct (81.8%), including two false `end` recommendations; candidate-response
+accuracy is 6/8 (75%). This underperforms the saved prompted baseline on the small test.
+The selected model and its compact ONNX export remain on this machine, excluded from
+Git and all external model repositories. Only the local application uses this model
+after explicit activation; Community Cloud retains the prompted OpenAI Exit Advisor.
+This is a Hugging Face implementation of the fine-tuning objective, rather than an
+OpenAI fine-tuning job; assignment acceptance of that provider substitution should
+be confirmed with the instructor.
 
 The [live Streamlit app](https://technion-genai-recruitment-assistant.streamlit.app)
 uses PostgreSQL 17/pgvector on Neon’s Free plan in Frankfurt. The database is claimed
@@ -73,12 +86,12 @@ Both `.env` and `.env.example` contain exactly three variables:
 |---|---|
 | `OPENAI_API_KEY` | OpenAI access for agents, embeddings and explicitly invoked evaluations |
 | `DATABASE_URL` | The shared hosted PostgreSQL/pgvector connection, with TLS |
-| `HF_TOKEN` | Hugging Face authentication for the planned Exit Advisor training and model repository access |
+| `HF_TOKEN` | Hugging Face authentication when downloading the base model for local Exit training |
 
-The selected Hugging Face model is `answerdotai/ModernBERT-base`, to be fine-tuned
-for the Exit Advisor's `end` / `do_not_end` classification. Token setup is prepared;
-training and integration will continue after the token is added. The running app
-currently uses the prompted OpenAI Exit Advisor baseline.
+The selected Hugging Face model is `answerdotai/ModernBERT-base`, fine-tuned for
+the Exit Advisor's `end` / `do_not_end` classification. Training runs locally;
+runtime inference reads local files and needs no Hugging Face connection or token.
+No model weights, benchmark text or Hugging Face token are sent to Community Cloud.
 
 Keep `.env` private. Use the same database connection as Community Cloud, with
 `sslmode=require` or stronger verification. Startup rejects loopback database hosts.
@@ -154,9 +167,11 @@ Configure application behavior in the `Settings` class in
 | Setting | Default or behavior |
 |---|---|
 | `chat_model` | `gpt-4o-mini` for Main planning, cited job answers, scheduling tool calls and chat-profile revisions |
-| `helper_model` | `gpt-5-nano` for Info classification, Exit classification, profile extraction and follow-up questions |
+| `helper_model` | `gpt-5-nano` for Info classification, prompted OpenAI Exit baseline, profile extraction and follow-up questions |
 | `judge_model` | `gpt-4o-mini` for explicitly invoked offline quality evaluation |
 | `exit_model` | Empty string uses the prompted helper-model baseline; set a supported returned model ID after fine-tuning |
+| `exit_provider` | `huggingface` when this machine has an explicit local activation receipt; otherwise `openai` |
+| `hf_exit_local_path` | `artifacts/hf-exit/runtime/`; local ONNX weights, tokenizer and integrity manifest |
 | `embedding_model` / `embedding_dimensions` | `text-embedding-3-small` / `None` uses the model's default dimensions |
 | `business_timezone` | `UTC` fallback when browser timezone detection is unavailable |
 | `request_timeout` / `max_retries` | 30 seconds / 2 retries |
@@ -243,9 +258,10 @@ This is a short-term assignment configuration. OpenAI lists **11 December 2026**
 as GPT-5 nano's shutdown date and **14 January 2027** for GPT-4o mini. Replace and
 evaluate these models before those dates; do not silently switch a running app.
 See the [official deprecations](https://developers.openai.com/api/docs/deprecations).
-GPT-5 nano is the prompted Exit baseline, not a fine-tuned model: the assignment's
-fine-tuning requirement remains outstanding until an eligible account completes
-training. New fine-tuning access is restricted; see
+GPT-5 nano remains the prompted Exit baseline used by Community Cloud. The local
+ModernBERT classifier is fine-tuned, with results and limitations below.
+The original OpenAI fine-tuning route remains unavailable to this organization;
+see
 [fine-tuning availability](https://developers.openai.com/api/docs/guides/supervised-fine-tuning).
 
 Choose a position in the compact header and type directly into the message box, or
@@ -1316,6 +1332,59 @@ system for hosted operation; the app sends no automatic email or Slack alerts.
 
 ## Fine-tuning and model evaluation
 
+### Local Hugging Face Exit Advisor
+
+The trained model is `answerdotai/ModernBERT-base`, base revision
+`8949b909ec900327062f0ebf497f51aef5e6f0c8`. Training updates the encoder and binary
+classification head using the original 9 training and 3 validation conversations.
+Test conversations are excluded from gradients, checkpoint selection and export
+selection. The five-epoch run uses seed 42, batch size 4, AdamW at learning rate
+0.00002, weight decay 0.01 and training-derived class weights. Validation macro F1
+selected epoch 4 (0.8992), breaking ties with loss; validation accuracy was 11/12.
+Test accuracy was 9/11, with zero failures and confusion matrix `[[6, 2], [0, 3]]`
+in `do_not_end`, `end` order. The saved prompted baseline scored 11/11.
+
+Training and inference share one input contract: candidate/assistant history as
+role/content JSON, at most 12 recent messages and 16,000 history characters.
+Phones, emails and recognized credentials are redacted. Left truncation retains
+recent context up to 2,048 tokens. Target labels, future replies, timestamps and
+profile documents are excluded. The classifier advises Main; opt-out, booking
+receipt and conversation-closure guards remain enforced by LangGraph.
+
+All dependencies remain in `requirements.txt`, including training/export tools.
+Python 3.13 on Linux/x86-64 uses an official CPU-only PyTorch wheel. Inference
+imports ONNX Runtime and tokenizers without loading PyTorch or Transformers.
+The 267 MB export uses per-channel dynamic INT8 matrix weights and float32
+embeddings. Its predictions match the selected PyTorch checkpoint on all 12
+validation examples. Loading verifies SHA-256 checksums, label order and the
+versioned input contract. A changed or corrupt artifact fails clearly.
+
+```bash
+source .venv/bin/activate
+# Train and export locally; does not activate or upload the model.
+python -m app.main fine-tune-hf
+# Evaluate the unchanged held-out partition without uploads or OpenAI calls.
+python -m app.main evaluate-exit-hf
+# Activate on this machine and restart its local app.
+python -m app.main activate-exit-hf
+./run-full-project.sh --restart --no-browser
+```
+
+Weights, tokenizer, activation receipt and aggregate training history remain under
+Git-ignored `artifacts/hf-exit/`; the held-out report is
+`artifacts/exit_test_huggingface.json`. Public base-model downloads are cached in
+`artifacts/huggingface/`. No trained model, benchmark text or HF token is uploaded to
+Hugging Face or Streamlit. A local activation receipt selects the classifier on this
+machine. Fresh checkouts and Community Cloud have no receipt and use the prompted
+OpenAI baseline; set `Settings.exit_provider` explicitly to `openai` to compare it
+locally. This provider difference is recorded in evaluation and tracing metadata.
+
+`classifier/exit` spans record artifact identity, measured input tokens, truncation,
+decision and latency without input text. Tokens are marked nonbillable; zero API
+cost refers to local inference and excludes hardware cost.
+
+### Supplied benchmark and original OpenAI training route
+
 The supplied labeled dataset is stored in PostgreSQL as version `assignment-v1`:
 15 conversations, 103 turns, and 59 labeled recruiter turns (25 continue,
 19 schedule, 15 end). There are 15 opening messages and 44 replies to candidate
@@ -1380,8 +1449,8 @@ instructions. Format validation does not establish model fine-tuning eligibility
 
 The Exit Advisor emits exactly `end` or `do_not_end`, covering disinterest and
 successful closure. Its recommendation cannot bypass booking validation.
-Fine-tuning requires account access and a supported base model; the assignment's
-fine-tuning requirement remains outstanding until a real training job completes.
+OpenAI fine-tuning requires account access and a supported base model; this original
+provider route remains outstanding. The local Hugging Face training above is complete.
 
 ```bash
 python -m app.main prepare-data --base-model YOUR_SUPPORTED_BASE_MODEL
@@ -1416,13 +1485,13 @@ the returned model ID. Use an empty string for the prompted baseline. Restart th
 app or notebook kernel after configuration changes.
 
 ```bash
-python -m app.main evaluate --split test --task actions --output artifacts/actions_test_baseline.json
-python -m app.main evaluate --split test --task exit --output artifacts/exit_test_baseline.json
+python -m app.main evaluate --split test --task actions --exit-provider openai --output artifacts/actions_test_baseline.json
+python -m app.main evaluate --split test --task exit --exit-provider openai --output artifacts/exit_test_baseline.json
 ```
 
 The required [evaluation notebook](tests/test_evals.ipynb) includes accuracy,
 confusion matrices, per-class metrics, a training-derived majority baseline, and
-error analysis. All twelve code cells were executed successfully on 7 November.
+error analysis. All twelve code cells were executed successfully on 7 November, including the local Hugging Face comparison.
 The notebook reads saved reports and the PostgreSQL benchmark; it makes no model calls.
 One shared styling cell provides consistent typography, blue/teal bars and confusion
 heatmaps with counts and row shares on a fixed 0–100% color scale. Figures include
@@ -1703,7 +1772,7 @@ app/
   storage/                Calendar, sources/profiles, conversation history and JSON export
   observability/          Structured diagnostics, execution spans and token usage
   rag/, ingestion/        Retrieval, PDFs, source collection, company logos and indexes
-  fine_tuning/            Training export validation and job commands
+  fine_tuning/            Local ModernBERT training, ONNX export and OpenAI job tooling
   evaluation/             Dataset preparation, labeled metrics, offline quality judge and reports
 streamlit_app/            Chat UI, profile inputs, presentation helpers, styles and browser controls
 .streamlit/config.toml    Single light theme and minimal native toolbar

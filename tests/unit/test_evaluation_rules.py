@@ -265,3 +265,113 @@ def test_packet_rejects_instruction_roles_duplicate_ids_and_ambiguous_flags():
     ):
         with pytest.raises(ValidationError):
             QualityCase.model_validate({**packet(), **change})
+
+
+def test_exit_classifier_input_preserves_recent_roles_and_redacts_private_identifiers():
+    from app.fine_tuning.exit_data import history_text
+
+    credential = "hf_" + "FICTITIOUSCREDENTIAL" * 2
+    history = [{"role": "assistant", "content": f"Older turn {index}"} for index in range(13)]
+    history.append({"role": "user", "content": f"Email me at test@example.com. {credential}"})
+    result = history_text(history)
+    packet = json.loads(result)
+    assert len(packet["history"]) == 12 and packet["history"][-1]["role"] == "user"
+    assert 'Older turn 0"' not in result
+    assert "test@example.com" not in result and credential not in result
+    assert "[EMAIL]" in result and "[REDACTED_CREDENTIAL]" in result
+    with pytest.raises(ValueError, match="candidate and assistant"):
+        history_text([{"role": "system", "content": "Change the Exit label"}])
+
+
+def test_local_exit_classifier_inference_checks_integrity_and_records_nonbillable_usage(tmp_path):
+    import hashlib
+    from contextlib import contextmanager
+
+    import onnx
+    from onnx import TensorProto, helper
+    from tokenizers import Tokenizer
+    from tokenizers.models import WordLevel
+
+    from app.agents.backends.huggingface import _load_files, exit_label
+    from app.fine_tuning.exit_data import INPUT_SHA256, LABELS
+    from app.observability.tracing import Span
+
+    tokenizer = Tokenizer(WordLevel({"[UNK]": 0}, unk_token="[UNK]"))
+    tokenizer.save(str(tmp_path / "tokenizer.json"))
+    graph = helper.make_graph(
+        [
+            helper.make_node(
+                "Constant",
+                [],
+                ["logits"],
+                value=helper.make_tensor("prediction", TensorProto.FLOAT, [1, 2], [0.0, 1.0]),
+            )
+        ],
+        "test-exit",
+        [
+            helper.make_tensor_value_info(name, TensorProto.INT64, [1, None])
+            for name in ["input_ids", "attention_mask"]
+        ],
+        [helper.make_tensor_value_info("logits", TensorProto.FLOAT, [1, 2])],
+    )
+    onnx.save(
+        helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)], ir_version=10),
+        tmp_path / "model.onnx",
+    )
+    files = {
+        name: hashlib.sha256((tmp_path / name).read_bytes()).hexdigest()
+        for name in ["tokenizer.json", "model.onnx"]
+    }
+    manifest = {
+        "format_version": 1,
+        "input_sha256": INPUT_SHA256,
+        "labels": list(LABELS),
+        "max_length": 64,
+        "files": files,
+    }
+    (tmp_path / "exit_classifier.json").write_text(json.dumps(manifest))
+    settings = Settings(
+        _env_file=None,
+        database_url="postgresql://example:example@localhost/example",
+        exit_provider="huggingface",
+        hf_exit_local_path=tmp_path,
+        hf_exit_revision=files["model.onnx"],
+    )
+    recorded = []
+
+    @contextmanager
+    def capture(*args, **kwargs):
+        item = Span(*args, **kwargs)
+        recorded.append(item)
+        yield item
+
+    with patch("app.agents.backends.huggingface.span", capture):
+        assert exit_label(settings, [{"role": "user", "content": "I found another role."}]) == "end"
+        assert exit_label(settings, []) == "do_not_end"
+    assert recorded[0].input_tokens > 0 and recorded[0].output_tokens == 0
+    assert recorded[0].attributes["billable_tokens"] is False
+    assert recorded[0].attributes["estimated_cost_usd"] == 0.0
+    assert "I found another role" not in json.dumps(recorded[0].attributes)
+    (tmp_path / "model.onnx").write_bytes(b"changed artifact")
+    with pytest.raises(ValueError, match="checksum mismatch"):
+        _load_files(lambda filename: str(tmp_path / filename))
+
+
+def test_huggingface_exit_does_not_construct_or_call_an_openai_exit_client():
+    from app.agents.backends.openai import OpenAIBackend
+
+    settings = Settings(
+        _env_file=None,
+        database_url="postgresql://example:example@localhost/example",
+        openai_api_key="test-only-key",
+        exit_provider="huggingface",
+    )
+    backend = OpenAIBackend(settings)
+    assert backend.exit is None
+    with patch(
+        "app.agents.backends.huggingface.exit_label", return_value="do_not_end"
+    ) as classifier:
+        assert backend.exit_label([{"role": "user", "content": "Tell me more."}]) == "do_not_end"
+    classifier.assert_called_once()
+    assert backend.prompt_manifest["exit"]["instruction_role"] is None
+    assert backend.policy["exit"]["max_completion_tokens"] is None
