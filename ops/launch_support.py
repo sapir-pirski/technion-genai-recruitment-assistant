@@ -42,14 +42,14 @@ def dependencies_ready():
 
 def configuration_target():
     from dotenv import dotenv_values
-    from sqlalchemy.engine import make_url
 
     from app.config import Settings
+    from ops.container_entrypoint import container_database_url
 
     values = {**dotenv_values(ROOT / ".env"), **os.environ}
     missing = [
         key
-        for key in ("OPENAI_API_KEY", "DATABASE_URL", "POSTGRES_PASSWORD")
+        for key in ("OPENAI_API_KEY", "DATABASE_URL")
         if not values.get(key) or str(values[key]).startswith("replace-with-")
     ]
     if missing:
@@ -57,17 +57,8 @@ def configuration_target():
     try:
         settings = Settings()
         settings.require_api_key()
-        url = make_url(settings.database_url)
-        local = (
-            url.host in {"localhost", "127.0.0.1"}
-            and url.port == 55432
-            and url.database == "recruitment"
-        )
-        if local and (url.username != "recruitment" or url.password != values["POSTGRES_PASSWORD"]):
-            raise RuntimeError(
-                "Local DATABASE_URL and POSTGRES_PASSWORD must use the same credentials."
-            )
-        return "local" if local else "hosted"
+        container_database_url(settings.database_url)
+        return "hosted"
     except RuntimeError:
         raise
     except Exception:

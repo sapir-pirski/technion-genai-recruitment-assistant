@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
-from sqlalchemy.engine import URL, make_url
+from sqlalchemy.engine import URL
 
 from ops import launch_support as launcher
 from ops.container_entrypoint import container_database_url
@@ -15,52 +15,13 @@ from ops.container_entrypoint import container_database_url
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_hosted_worker_requires_private_remote_credentials_and_keeps_them_out_of_schedule(tmp_path):
-    worker = tmp_path / "ops/run-job-sync.sh"
-    worker.parent.mkdir()
-    worker.write_bytes((ROOT / "ops/run-job-sync.sh").read_bytes())
-    python = tmp_path / ".venv/bin/python"
-    python.parent.mkdir(parents=True)
-    python.write_text(f'#!/bin/bash\nexec "{sys.executable}" "$@"\n')
-    python.chmod(0o755)
-    app = tmp_path / "app"
-    app.mkdir()
-    (app / "__init__.py").touch()
-    (app / "main.py").write_text(
-        "import json,os,sys\nfrom pathlib import Path\n"
-        "Path('received.json').write_text(json.dumps({'url':os.environ['DATABASE_URL'],"
-        "'arguments':sys.argv[1:]}))\n"
-    )
-    credentials = tmp_path / "artifacts/hosted-database-connection.json"
-    credentials.parent.mkdir()
-    remote = "postgresql://worker:fictitious-secret@example.test/jobs?sslmode=require"
-    command = ["bash", str(worker), "--hosted", "--offline"]
-    missing = subprocess.run(command, capture_output=True, text=True)
-    assert missing.returncode == 1 and "owner-only" in missing.stderr
-    credentials.write_text(json.dumps({"database_url": remote}))
-    credentials.chmod(0o600)
-    ready = subprocess.run(command, capture_output=True, text=True)
-    assert ready.returncode == 0, ready.stderr
-    received = json.loads((tmp_path / "received.json").read_text())
-    assert received == {
-        "url": remote,
-        "arguments": ["sync-jobs", "--trigger", "scheduled", "--cleanup", "--offline"],
-    }
-    for unsafe_url, mode in [
-        (remote, 0o644),
-        ("postgresql://worker:fake@localhost/jobs", 0o600),
-        (remote.replace("sslmode=require", "sslmode=disable"), 0o600),
-    ]:
-        credentials.write_text(json.dumps({"database_url": unsafe_url}))
-        credentials.chmod(mode)
-        failed = subprocess.run(command, capture_output=True, text=True)
-        assert failed.returncode == 1 and unsafe_url not in failed.stderr
-    output = tmp_path / "cloud.plist"
+def test_native_schedule_keeps_cloud_credentials_out_of_plist(tmp_path):
+    output = tmp_path / "job-sync.plist"
     subprocess.run(
         [
             sys.executable,
             str(ROOT / "ops/install_schedule.py"),
-            "--hosted",
+            "--native",
             "--output",
             str(output),
         ],
@@ -68,28 +29,31 @@ def test_hosted_worker_requires_private_remote_credentials_and_keeps_them_out_of
         capture_output=True,
     )
     config = plistlib.loads(output.read_bytes())
-    assert config["Label"] == "com.recruitment.job-sync-cloud"
-    assert config["ProgramArguments"][-1] == "--hosted"
-    assert config["StartCalendarInterval"] == {"Hour": 3, "Minute": 37}
-    assert "EnvironmentVariables" not in config and remote not in str(config)
+    assert config["Label"] == "com.recruitment.job-sync"
+    assert config["ProgramArguments"][-1] == "--native"
+    assert config["StartCalendarInterval"] == {"Hour": 3, "Minute": 17}
+    assert "EnvironmentVariables" not in config
 
 
-def test_container_url_preserves_credentials_and_hosted_options():
+def test_container_url_requires_hosted_tls_and_preserves_credentials():
     original = URL.create(
         "postgresql+psycopg",
         username="recruitment",
         password="fictitious:@/password",
-        host="127.0.0.1",
-        port=55432,
+        host="database.example.test",
+        port=5432,
         database="recruitment",
+        query={"sslmode": "require", "channel_binding": "require"},
     )
-    translated = make_url(container_database_url(original.render_as_string(hide_password=False)))
-    assert translated.host == "postgres" and translated.port == 5432
-    assert translated.password == original.password and translated.database == original.database
-    remote = "postgresql+psycopg://person:fictitious@example.test:5432/jobs?sslmode=require"
-    assert container_database_url(remote) == remote
-    with pytest.raises(ValueError, match="container-reachable"):
-        container_database_url("postgresql://person:fictitious@localhost:5433/other")
+    encoded = original.render_as_string(hide_password=False)
+    assert container_database_url(encoded) == encoded
+    for host in ("localhost", "127.0.0.1", "::1", "postgres"):
+        with pytest.raises(ValueError, match="hosted PostgreSQL"):
+            container_database_url(original.set(host=host).render_as_string(hide_password=False))
+    with pytest.raises(ValueError, match="requires TLS"):
+        container_database_url(
+            original.set(query={"sslmode": "disable"}).render_as_string(hide_password=False)
+        )
 
 
 def fake_docker(tmp_path):
@@ -99,7 +63,7 @@ def fake_docker(tmp_path):
     executable.write_text("""#!/bin/bash
 echo "$*" >> "$DOCKER_TEST_CALLS"
 if [[ "$*" == *"--check-config"* ]]; then
-    echo "${DOCKER_TEST_TARGET:-local}"
+    echo "hosted"
 elif [[ "$*" == "compose port app 8501" ]]; then
     [[ -z "${DOCKER_TEST_PORT:-}" ]] || echo "127.0.0.1:$DOCKER_TEST_PORT"
 elif [[ "$*" == "compose build app" ]]; then
@@ -110,9 +74,7 @@ fi
 exit 0
 """)
     executable.chmod(0o755)
-    (tmp_path / ".env").write_text(
-        "OPENAI_API_KEY=fictitious\nDATABASE_URL=fictitious\nPOSTGRES_PASSWORD=fictitious\n"
-    )
+    (tmp_path / ".env").write_text("OPENAI_API_KEY=fictitious\nDATABASE_URL=fictitious\n")
     launcher = tmp_path / "run-full-project.sh"
     launcher.write_bytes((ROOT / launcher.name).read_bytes())
     environment = {
@@ -125,9 +87,7 @@ exit 0
 
 
 def test_launcher_builds_bootstraps_then_starts_only_the_required_services(tmp_path):
-    target = "local"
     launcher, environment = fake_docker(tmp_path)
-    environment["DOCKER_TEST_TARGET"] = target
     completed = subprocess.run(
         ["bash", str(launcher), "--port", "8517", "--no-browser"],
         env=environment,
@@ -139,7 +99,7 @@ def test_launcher_builds_bootstraps_then_starts_only_the_required_services(tmp_p
     assert calls.index("compose build app") < next(
         i for i, v in enumerate(calls) if v.endswith("app.main bootstrap --if-needed")
     )
-    assert ("compose up -d --wait --wait-timeout 60 postgres" in calls) is (target == "local")
+    assert not any("up" in value and "postgres" in value for value in calls)
     assert calls[-1] == "compose up -d --no-deps --wait --wait-timeout 90 app"
     assert not any("down" in value or " -v" in value for value in calls)
 
@@ -147,7 +107,7 @@ def test_launcher_builds_bootstraps_then_starts_only_the_required_services(tmp_p
 def test_launcher_copies_template_without_overwriting_existing_credentials(tmp_path):
     launcher, environment = fake_docker(tmp_path)
     template = tmp_path / ".env.example"
-    template.write_text("OPENAI_API_KEY=\nDATABASE_URL=\nPOSTGRES_PASSWORD=\n")
+    template.write_text("OPENAI_API_KEY=\nDATABASE_URL=\n")
     original = (tmp_path / ".env").read_bytes()
     subprocess.run(
         ["bash", str(launcher), "--no-browser"], env=environment, check=True, capture_output=True
@@ -222,9 +182,7 @@ def test_missing_python_dependencies_and_converter_are_installed_once_and_repair
     binary.mkdir()
     launcher = tmp_path / "run-full-project.sh"
     launcher.write_bytes((ROOT / launcher.name).read_bytes())
-    (tmp_path / ".env").write_text(
-        "OPENAI_API_KEY=fictitious\nDATABASE_URL=fictitious\nPOSTGRES_PASSWORD=fictitious\n"
-    )
+    (tmp_path / ".env").write_text("OPENAI_API_KEY=fictitious\nDATABASE_URL=fictitious\n")
     runtime = tmp_path / "runtime-template"
     executable(runtime, RUNTIME_SCRIPT)
     for name in ("python3", "python3.11", "python3.12", "python3.13"):

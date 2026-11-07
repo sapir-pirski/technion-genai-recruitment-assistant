@@ -30,6 +30,8 @@ dist/
 # Reports, exports, and local generated files
 *.db
 *.db-*
+*.dump
+*.backup
 .coverage
 .coverage.*
 coverage.xml

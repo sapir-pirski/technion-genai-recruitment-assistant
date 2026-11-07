@@ -14,9 +14,6 @@ services:
       - ./data:/app/data
       - ./config:/app/config
       - ./artifacts:/app/artifacts
-    depends_on:
-      postgres:
-        condition: service_healthy
     init: true
     security_opt:
       - no-new-privileges:true
@@ -24,21 +21,3 @@ services:
       - ALL
     restart: unless-stopped
     stop_grace_period: 30s
-  postgres:
-    image: pgvector/pgvector:pg17@sha256:7d0a41464797aeb9862dfdc0bbf1526b82cfd324cdd8036df19e3545f4a9ccb8
-    environment:
-      POSTGRES_DB: recruitment
-      POSTGRES_USER: recruitment
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-    ports:
-      - "127.0.0.1:55432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U recruitment -d recruitment"]
-      interval: 2s
-      timeout: 3s
-      retries: 30
-    restart: unless-stopped
-volumes:
-  postgres-data:

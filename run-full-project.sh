@@ -129,7 +129,7 @@ prepare_env() {
     if [[ ! -e .env ]]; then
         cp .env.example .env
         chmod 600 .env
-        fail "Created .env. Enter OPENAI_API_KEY, DATABASE_URL and POSTGRES_PASSWORD, then rerun."
+        fail "Created .env. Enter OPENAI_API_KEY and the hosted DATABASE_URL, then rerun."
     fi
 }
 docker_ready() {
@@ -215,8 +215,8 @@ if [[ "$native" == no ]]; then
     }
     case "$action" in
         status) docker compose ps; exit 0 ;;
-        logs) docker compose logs --tail 100 app postgres; exit 0 ;;
-        stop) stage "Stopping project containers" docker compose stop; echo "Stopped; database and files retained."; exit 0 ;;
+        logs) docker compose logs --tail 100 app; exit 0 ;;
+        stop) stage "Stopping the app container" docker compose stop app; echo "Stopped; the hosted database is unchanged."; exit 0 ;;
     esac
     export APP_UID="$(id -u)" APP_GID="$(id -g)"
     existing_port="$(docker compose port app 8501 2>>"$launcher_log" | awk -F: 'NR==1 {print $NF}' || true)"
@@ -228,10 +228,7 @@ if [[ "$native" == no ]]; then
     ensure_image
     phase="container runtime, requirements and credentials"
     echo "Checking Python, requirements, credentials and document support..."
-    database_target="$(docker compose run --rm --no-deps -T app --check-config 2>>"$launcher_log")"
-    if [[ "$database_target" == local ]]; then
-        stage "Waiting for PostgreSQL" docker compose up -d --wait --wait-timeout 60 postgres
-    fi
+    docker compose run --rm --no-deps -T app --check-config >>"$launcher_log" 2>&1
     stage "Checking PDFs and published indexes" docker compose run --rm --no-deps -T app python -m app.main bootstrap --if-needed
     if [[ "$action" == restart ]]; then
         stage "Restarting the application" docker compose up -d --no-deps --force-recreate --wait --wait-timeout 90 app
@@ -280,11 +277,7 @@ else
 fi
 converter_ready || install_converter
 phase="native configuration"
-database_target="$(.venv/bin/python -m ops.launch_support config)"
-if [[ "$database_target" == local ]]; then
-    docker_ready
-    stage "Waiting for PostgreSQL" docker compose up -d --wait --wait-timeout 60 postgres
-fi
+.venv/bin/python -m ops.launch_support config >>"$launcher_log" 2>&1
 existing_port="$(.venv/bin/python -m ops.launch_support port)"
 if [[ -n "$existing_port" ]]; then
     if [[ "$explicit_port" == yes && "$port" != "$existing_port" && "$action" != restart ]]; then

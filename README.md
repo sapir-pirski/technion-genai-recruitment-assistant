@@ -48,10 +48,12 @@ was approximately $0.21 for three epochs, excluding evaluation calls.
 
 The [live Streamlit app](https://technion-genai-recruitment-assistant.streamlit.app)
 uses PostgreSQL 17/pgvector on Neon’s Free plan in Frankfurt. The database is claimed
-by the owner with no expiry. Its public job/RAG catalog and 128 future approved
-appointments are initialized. Live checks verified sourced answers, three follow-up
+by the owner with no expiry. All 22 tables share that database, including the public
+job/RAG catalog, calendar, bookings, conversations, benchmark, logs and checkpoints.
+Live checks verified sourced answers, three follow-up
 questions, timezone-aware interview choices, opt-out and persistent checkpoints.
-No local candidate histories, bookings or private benchmark rows were transferred.
+The complete local database was transferred and verified on 7 November 2026;
+private data remains excluded from Git. Verified backup archives stay local.
 
 ## Install and run
 
@@ -62,8 +64,11 @@ git clone https://github.com/sapir-pirski/technion-genai-recruitment-assistant.g
 cd technion-genai-recruitment-assistant
 ```
 
-Start Docker with Docker Compose and run commands from the repository root. The
-default launcher builds and runs the app and PostgreSQL/pgvector in two containers.
+Run commands from the repository root. The default launcher builds and runs one
+app container; PostgreSQL/pgvector is hosted in Neon. Docker Compose contains no
+database service or persistent database volume. Use `--native` for a Python venv
+without Docker.
+
 Python 3.13, a virtual environment at `/opt/venv`, all Python dependencies and
 LibreOffice are included in the application image; host Python is not required.
 
@@ -75,20 +80,18 @@ cp -n .env.example .env
 ./run-full-project.sh
 ```
 
-Both environment files contain exactly these three variables:
+Both environment files contain exactly these two variables:
 
 | Variable | Purpose |
 |---|---|
 | `OPENAI_API_KEY` | Your OpenAI API key, required for agents, embeddings, and model evaluation |
 | `DATABASE_URL` | PostgreSQL connection URL used by every application component |
-| `POSTGRES_PASSWORD` | Password for the bundled Docker database; use the same password in its connection URL |
 
-Keep `.env` private and retain `.env.example` as the shared template. Both still
-contain three credentials. Container startup translates the template's local
-`127.0.0.1:55432` database endpoint to `postgres:5432` in the child process only;
-it preserves credentials and does not rewrite `.env`. Hosted PostgreSQL URLs and
-TLS options pass through unchanged; the launcher skips the bundled database for
-hosted URLs.
+Keep `.env` private and retain `.env.example` as the shared template. Supply the
+same hosted database connection used by Community Cloud, with `sslmode=require`
+or stronger verification. Loopback database hosts are rejected by startup checks.
+The OpenAI key and database URL are the only application credentials; database
+passwords belong inside the private connection URL.
 
 The script reuses Docker's cached dependency layers, checks Python, required
 packages, credentials and document support, waits for the database, checks PDF
@@ -101,7 +104,7 @@ identity avoids rebuilding/exporting unchanged images. Changed source or require
 or a replaced/missing image, triggers a build. The fingerprint cache lives under
 `artifacts/launcher/` and contains no credentials or input documents.
 If `.env` is missing, it copies the template with owner-only permissions and stops
-so you can enter the three values. Dependency installation needs package-index
+so you can enter the two values. Dependency installation needs package-index
 access; only new or changed PDFs need OpenAI embeddings and incur usage charges.
 
 Containers keep running after the launcher exits. The launcher reuses this project's
@@ -116,11 +119,11 @@ non-root app user to write the mounted data folders without changing their permi
 ./run-full-project.sh --status
 ./run-full-project.sh --logs
 ./run-full-project.sh --restart --no-browser
-./run-full-project.sh --stop       # Stop both services; retain database and files.
-./run-full-project.sh              # Check/reuse dependencies, indexes and services; open browser.
+./run-full-project.sh --stop       # Stop the app; the hosted database stays available.
+./run-full-project.sh              # Check/reuse dependencies and indexes; open browser.
 ```
 
-`app` starts after the database health check and performs non-destructive schema
+`app` checks the hosted database connection and performs non-destructive schema
 initialization with a bounded readiness wait before starting Streamlit. Container
 restarts do not run ingestion or install dependencies. The launcher explicitly
 runs `bootstrap --if-needed`: it compares PDF filenames/bytes, manifest hashes,
@@ -128,17 +131,15 @@ document paths, collection/format versions and published chunk completeness. Rea
 indexes skip ingestion and model initialization entirely. New, changed, removed,
 relocated or incomplete inputs use the existing incremental ingestion command.
 No online source scraping occurs during startup. A subsequent `docker compose
-up -d --wait` starts both services without re-ingestion; for hosted PostgreSQL,
-use `docker compose up -d --no-deps --wait app`.
+up -d --wait app` starts only the app without re-ingestion.
 
 The application image contains code, dependencies and two explicitly included
 fictitious evaluation fixtures. `.dockerignore` and explicit
 COPY instructions exclude `.env`, deployment secrets, the host `.venv`, PDFs,
 private datasets, configuration, reports and logs. Runtime bind mounts keep `data/`,
-`config/` and `artifacts/` in the repository; the existing
-`recruitment-project_postgres-data` volume retains SQL and vector data. Back up all
-four together. Stopping or recreating containers preserves them; `docker compose
-down -v` deletes the database volume and must not be used for normal shutdown.
+`config/` and `artifacts/` in the repository. Database and vector records live in
+Neon. Stopping or removing the app container leaves the hosted database intact.
+Back up local source/configuration files and take separate private database backups.
 
 All `python -m app.main ...` commands below can run in the built image by prefixing
 them with `docker compose run --rm --no-deps -T app`, for example:
@@ -161,10 +162,8 @@ do not start an inactive Docker daemon. Docker/Compose installation remains a ho
 prerequisite. A busy explicitly selected port needs another `--port`.
 If Docker reports permission errors on mounted folders, rebuild through the
 launcher as the folder-owning user so the image user IDs match. If authentication
-fails after changing credentials, remember that editing `.env` does not change the
-password already stored inside an existing PostgreSQL volume; update that database
-password deliberately rather than deleting its volume. See the backup commands
-below before moving or restoring a deployment.
+fails, check the hosted connection and its TLS options. Editing `.env` selects a
+connection; it does not change the provider's database password.
 
 ### Native virtual environment
 
@@ -205,8 +204,8 @@ without resetting database contents:
 ```
 
 Native stop affects only the managed app and leaves the shared database running.
-`--server.port` remains an alias for `--port` in older commands. This flow starts
-only the local PostgreSQL container, then runs the UI in the host venv.
+`--server.port` remains an alias for `--port` in older commands. This flow runs
+the UI in the host venv and connects directly to Neon; no database is started locally.
 Stop the containerized UI before switching runtimes; bootstrap refreshes local
 document-path metadata without changing PDF bytes or re-embedding unchanged text.
 
@@ -906,13 +905,11 @@ recovery also reuses the redacted message without repeating completed model work
 
 One PostgreSQL database with pgvector stores catalog records, embeddings, bookings,
 conversation history, execution traces, and LangGraph checkpoints. All components use the same `DATABASE_URL`.
-[compose.yaml](compose.yaml) starts the database and app containers. Native and
-Streamlit Community Cloud operation use the same application code and database schema.
-
-The local service binds to `127.0.0.1:55432` and retains data in
-`recruitment-project_postgres-data`. `docker compose stop` preserves it;
-`docker compose up -d --wait` starts it again. Initialization creates the vector
-extension and final tables when absent, under an advisory lock, without resetting data.
+[compose.yaml](compose.yaml) starts only the optional app container. Native,
+containerized and Community Cloud instances connect to the same hosted database.
+Initialization creates the vector extension and final tables when absent, under
+an advisory lock, without resetting data. The project has no running local database
+or database volume.
 
 The initialized application has **22 tables**: 18 application tables below and
 four managed by LangGraph. Catalog/calendar models are in [app/ingestion/models.py](app/ingestion/models.py)
@@ -988,19 +985,20 @@ LangGraph manages four tables in this same database: `checkpoints`,
 thread/parent continuity across restarts. `checkpoint_migrations` is LangGraph's
 internal setup bookkeeping and remains required by its checkpoint saver.
 
-The existing local database was consolidated directly, preserving stored locations,
-ingestion outcomes, published version selections, vectors, bookings, conversations,
-traces, benchmark data and checkpoints. A private pre-change backup is stored under
-`artifacts/backups/`, excluded from Git and container images. There are no project
-migration scripts or upgrade hooks. New databases create the final schema directly;
-initialization of an existing database does not alter its columns.
+All 22 tables were transferred to Neon in one transaction after backups of both
+databases were restored and verified. Existing local slot IDs were retained so
+bookings and checkpoints keep their references; cloud ingestion history was merged.
+Every expected row was checked before commit. PDF paths were normalized for shared
+use by the native, containerized and cloud runtimes. There are no retained migration
+scripts or upgrade hooks.
 
-Catalog and ingestion checks cover fresh-schema creation, concurrent outcome
-appends, publication integrity and missing-vector repair.
-A restored-backup rehearsal and live before/after row fingerprints verified data
-preservation. Restart checks confirmed all 11 published PDFs and 57 RAG chunks,
-with ingestion skipped. Verification results are saved locally in
-`artifacts/table-consolidation-verification.json` (Git ignored).
+The transfer preserved 4 conversations, 10 messages, 1 booking, 161 stored slots,
+15 benchmark conversations, 103 benchmark turns, all checkpoints and logs, and the
+11 published PDFs with 57 RAG chunks. These counts describe the transfer snapshot;
+normal app use changes operational records. The original local database is retired.
+Private, restore-tested archives and their checksums remain under
+`artifacts/backups/`, excluded from Git and container images. Transfer evidence is
+in the ignored `artifacts/cloud-transfer-verification.json`.
 
 ## Conversation history, logging, and tracing
 
@@ -1351,18 +1349,15 @@ the already-built app image, loads runtime credentials, refreshes selected sourc
 and ingests all local PDFs. It removes that container on completion. It does not
 build/pull images, install packages, start Streamlit, submit training jobs or create
 calendar slots. Build once with `./run-full-project.sh` and keep Docker running.
-The database must also be running; use `docker compose up -d --wait postgres` for
-the local database. The existing PostgreSQL lease prevents overlapping native and
+The hosted database must be reachable with its configured TLS options. The existing
+PostgreSQL lease prevents overlapping native and
 containerized sync runs. Use `./ops/run-job-sync.sh --native` for a prepared host venv.
 
-For the hosted app, `./ops/run-job-sync.sh --hosted` uses the prepared host venv
-and reads `database_url` from the owner-only, Git-ignored file
-`artifacts/hosted-database-connection.json`. It checks the PostgreSQL host and TLS
-setting before running the same ingestion pipeline. The OpenAI key still comes
-from `.env`; no extra environment variables or migration scripts are needed.
-Use `--hosted --offline` to recheck existing PDFs without fetching sources.
-The hosted worker refreshes PDFs, embeddings, descriptions and company assets;
-it does not create availability or alter bookings.
+Both `./ops/run-job-sync.sh` (app image) and `./ops/run-job-sync.sh --native`
+(prepared venv) read the same hosted connection from `.env`. The worker refreshes
+PDFs, embeddings, descriptions and company assets; it does not create availability
+or alter bookings. Use `--native --offline` to recheck existing PDFs without fetching
+sources. The installed daily worker uses the venv, so Docker is not required.
 
 ### macOS
 
@@ -1381,27 +1376,18 @@ launchctl print gui/$(id -u)/com.recruitment.job-sync
 python3 ops/install_schedule.py --remove
 ```
 
-The hosted companion uses a separate LaunchAgent at **03:37 Asia/Jerusalem**,
-20 minutes after the local worker. Both are installed on this development machine.
-The schedule contains only the worker command; database passwords and API keys
-are not embedded in the plist. The hosted worker requires the project venv and
-private connection file, and does not require Docker.
+The installed worker uses `--native` at **03:17 Asia/Jerusalem** and connects to
+Neon through `.env`. The redundant second schedule was removed. Its plist stores
+only the command and paths, without database passwords or API keys.
 
 ```bash
-# Preview/install the hosted companion; the local schedule stays in place.
-python3 ops/install_schedule.py --hosted --output /tmp/cloud-job-sync.plist
-python3 ops/install_schedule.py --hosted
-launchctl print gui/$(id -u)/com.recruitment.job-sync-cloud
-# Run now, or remove only the hosted schedule.
-./ops/run-job-sync.sh --hosted
-python3 ops/install_schedule.py --hosted --remove
+python3 ops/install_schedule.py --native
+./ops/run-job-sync.sh --native
 ```
 
-The installer itself uses only Python's standard library; `--native` selects the
-host venv worker. An existing default LaunchAgent automatically uses the updated
-Docker worker script at its next run. The user must have a login session. The Docker worker also needs a
-running Docker daemon; the hosted worker uses the venv directly. Use an always-on
-host for dependable daily freshness; a powered-off or logged-out machine cannot provide that service.
+The installer uses Python's standard library. The user needs a login session and
+an available host. Docker is needed only when choosing the containerized worker.
+Use an always-on worker host for dependable daily freshness.
 
 ### Linux and hosted workers
 
@@ -1450,27 +1436,36 @@ is retained in the database; no dataset JSON or import script remains in the rep
 Set `dataset_version` in `app/config.py` to select a verified benchmark version.
 Preparation, evaluation, and the notebook read these two database tables directly.
 They fail with a restore instruction when the requested version is absent.
-The local Docker volume retains the imported benchmark. A fresh database needs
-the benchmark restored from a trusted PostgreSQL backup before these workflows run.
-Interactive chat and PDF ingestion do not require benchmark records.
+Neon retains the imported benchmark alongside the application tables. A fresh
+independent database needs that benchmark restored from a trusted backup before
+these workflows run. Interactive chat and PDF ingestion do not require it.
 
-Back up the two tables outside the repository; the archive includes their schema:
-
-```bash
-docker compose exec -T postgres pg_dump -U recruitment -d recruitment -Fc \
-  -t dataset_conversations -t dataset_turns > /path/outside/repository/benchmark.dump
-```
-
-To restore records after the application has initialized its schema, with both
-benchmark tables empty:
+For private backups, use PostgreSQL 17+ client tools and the provider's direct
+connection. With the plain `postgresql://` URI in `.env`, the following exports
+only the two benchmark tables:
 
 ```bash
-docker compose exec -T postgres pg_restore -U recruitment -d recruitment --data-only \
-  < /path/outside/repository/benchmark.dump
+umask 077
+set -a
+source .env
+set +a
+pg_dump --dbname="$DATABASE_URL" --format=custom --no-owner --no-privileges \
+  --table=public.dataset_conversations --table=public.dataset_turns \
+  --file=/secure/path/benchmark.dump
+pg_restore --list /secure/path/benchmark.dump
 ```
 
-Keep backups private because the supplied text/contact metadata can contain personal
-information. Back up the whole database when preserving runtime history and bookings too.
+Restore data only into initialized, empty benchmark tables:
+
+```bash
+pg_restore --dbname="$DATABASE_URL" --data-only --no-owner --no-privileges \
+  /secure/path/benchmark.dump
+```
+
+Keep archives private because they contain original text and contact metadata.
+Full database backups also preserve runtime history, bookings and checkpoints.
+Restore a full archive into an empty recovery database and verify it before use.
+See the official [PostgreSQL backup tool documentation](https://www.postgresql.org/docs/17/app-pgdump.html).
 
 ```bash
 python -m app.main prepare-data
@@ -1767,8 +1762,9 @@ Community Cloud is explicitly required by [TASK.md](TASK.md). The application is
 Python 3.13 and the repository’s `streamlit_app/streamlit_main.py` entry point.
 The PostgreSQL 17 project has been claimed on Neon’s Free plan in Frankfurt,
 with no expiry. Its 22-table schema contains the 11 public job PDFs, 57 active
-RAG chunks and 128 future approved interview slots. Retrieval and citation checks
-passed. No local candidate histories, bookings or benchmark rows were copied.
+RAG chunks and the complete calendar/history, including the private benchmark,
+conversations, bookings, logs and checkpoints. All 22 tables were transferred with
+row verification; the local database and its volume are retired.
 The live app passed health, sourced-answer, follow-up, scheduling and opt-out checks.
 Its checkpoint was recovered through a fresh database connection. The smoke test
 made no booking and used only public job questions. Credentials and provisioning
@@ -1780,14 +1776,13 @@ for persistent graph checkpoints.
 2. Select `streamlit_app/streamlit_main.py` and Python 3.13.
 3. Provision persistent PostgreSQL with pgvector; configure TLS according to the provider.
 4. Set `OPENAI_API_KEY` and `DATABASE_URL` through deployment secrets.
-   `POSTGRES_PASSWORD` belongs to local Docker and is not needed in Community Cloud.
 5. Initialize the hosted schema and run ingestion against that database before use.
    Transfer only the intended role configuration and recruiter-approved availability;
    do not copy local candidate histories, bookings or private benchmark records by default.
    Verify retrieval, timezone handling, booking confirmation/concurrency, opt-out and
-   checkpoint recovery. The existing local database and volume stay intact.
+   checkpoint recovery before retiring any source database.
 6. Run daily ingestion on a worker with durable PDFs/manifest and the hosted
-   database connection. The installed macOS hosted companion runs at 03:37
+   database connection. The installed macOS native worker runs at 03:17
    Asia/Jerusalem; Community Cloud itself does not run this background schedule.
    Its host must be available for the scheduled work.
 
@@ -1827,7 +1822,7 @@ tests/                    Automated tests and evaluation notebook
   fixtures/workflow_cases.json Controlled multi-turn booking cases
 ops/                      Container/native launcher support, daily scheduling and PDF verification
 Dockerfile, .dockerignore  App image with venv/LibreOffice; restricted build context
-compose.yaml              App and persistent PostgreSQL/pgvector services
+compose.yaml              Optional app container; connects to the hosted database
 requirements.txt          All pinned Python dependencies
 packages.txt              LibreOffice system package for Streamlit Community Cloud
 run-full-project.sh       Docker build/bootstrap/launch; --native preserves host venv setup

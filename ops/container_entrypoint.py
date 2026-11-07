@@ -1,4 +1,4 @@
-"""Container networking and non-destructive server readiness; never prints secrets."""
+"""Hosted database validation and server readiness; never prints secrets."""
 
 import os
 import sys
@@ -9,10 +9,14 @@ from sqlalchemy.engine import make_url
 
 def container_database_url(value):
     url = make_url(value)
-    if url.host in {"localhost", "127.0.0.1"}:
-        if url.port != 55432 or url.database != "recruitment":
-            raise ValueError("Use a container-reachable database hostname")
-        url = url.set(host="postgres", port=5432)
+    if (
+        url.get_backend_name() != "postgresql"
+        or not url.host
+        or url.host in {"localhost", "127.0.0.1", "::1", "postgres"}
+    ):
+        raise ValueError("Use the hosted PostgreSQL database")
+    if url.query.get("sslmode") not in {"require", "verify-ca", "verify-full"}:
+        raise ValueError("The hosted database requires TLS")
     return url.render_as_string(hide_password=False)
 
 
@@ -28,7 +32,7 @@ def main():
 
             missing = [
                 key
-                for key in ("OPENAI_API_KEY", "DATABASE_URL", "POSTGRES_PASSWORD")
+                for key in ("OPENAI_API_KEY", "DATABASE_URL")
                 if not os.environ.get(key) or os.environ[key].startswith("replace-with-")
             ]
             if missing:
@@ -42,13 +46,8 @@ def main():
                 )
             if not document_converter():
                 raise RuntimeError("Document converter is missing")
-            url = make_url(settings.database_url)
-            local = url.host == "postgres" and url.port == 5432 and url.database == "recruitment"
-            if local and (
-                url.username != "recruitment" or url.password != os.environ.get("POSTGRES_PASSWORD")
-            ):
-                raise ValueError("Local database credentials must match")
-            print("local" if local else "hosted")
+            container_database_url(settings.database_url)
+            print("hosted")
             return
         if command[:3] == ["python", "-m", "streamlit"]:
             from app.config import Settings
