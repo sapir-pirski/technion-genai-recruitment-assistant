@@ -1,4 +1,4 @@
 # Contributors
 
-- Contributor 1
-- Contributor 2
+- Menachem Twersky
+- Sapir Pirski
