@@ -1,0 +1,162 @@
+[
+  {
+    "case_id": "mixed_information_and_booking",
+    "reference_time": "2030-01-07T08:00:00Z",
+    "timezone": "UTC",
+    "calendar_starts": [
+      "2030-01-08T09:00:00Z",
+      "2030-01-08T10:00:00Z",
+      "2030-01-08T11:00:00Z"
+    ],
+    "job_description": "This Python Developer role requires Python, SQL and unit testing. Responsibilities include building Python services and reviewing code.",
+    "steps": [
+      {
+        "text": "Which skills are required, and what interview times are available?",
+        "selected_ordinal": null,
+        "expect": {
+          "action": "schedule",
+          "closed": false,
+          "bookings": 0,
+          "minimum_offers": 3,
+          "cited_answer": true,
+          "closure_reason": null
+        }
+      },
+      {
+        "text": "Please confirm the first appointment. What would my responsibilities be?",
+        "selected_ordinal": 1,
+        "expect": {
+          "action": "continue",
+          "closed": false,
+          "bookings": 1,
+          "minimum_offers": 0,
+          "cited_answer": true,
+          "closure_reason": null
+        }
+      },
+      {
+        "text": "Thank you, that answers my questions.",
+        "selected_ordinal": null,
+        "expect": {
+          "action": "end",
+          "closed": true,
+          "bookings": 1,
+          "minimum_offers": 0,
+          "cited_answer": false,
+          "closure_reason": "scheduled"
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "ambiguous_acceptance_then_confirmation",
+    "reference_time": "2030-01-07T08:00:00Z",
+    "timezone": "UTC",
+    "calendar_starts": [
+      "2030-01-08T09:00:00Z",
+      "2030-01-08T10:00:00Z",
+      "2030-01-08T11:00:00Z"
+    ],
+    "job_description": "This Python Developer role requires Python, SQL and unit testing. Responsibilities include building Python services and reviewing code.",
+    "steps": [
+      {
+        "text": "Please show me available interview times.",
+        "selected_ordinal": null,
+        "expect": {
+          "action": "schedule",
+          "closed": false,
+          "bookings": 0,
+          "minimum_offers": 3,
+          "cited_answer": false,
+          "closure_reason": null
+        }
+      },
+      {
+        "text": "Yes.",
+        "selected_ordinal": null,
+        "expect": {
+          "action": "schedule",
+          "closed": false,
+          "bookings": 0,
+          "minimum_offers": 3,
+          "cited_answer": false,
+          "closure_reason": null
+        }
+      },
+      {
+        "text": "Please confirm the second appointment.",
+        "selected_ordinal": 2,
+        "expect": {
+          "action": "end",
+          "closed": true,
+          "bookings": 1,
+          "minimum_offers": 0,
+          "cited_answer": false,
+          "closure_reason": "scheduled"
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "explicit_opt_out",
+    "reference_time": "2030-01-07T08:00:00Z",
+    "timezone": "UTC",
+    "calendar_starts": [
+      "2030-01-08T09:00:00Z",
+      "2030-01-08T10:00:00Z",
+      "2030-01-08T11:00:00Z"
+    ],
+    "job_description": "This Python Developer role requires Python, SQL and unit testing. Responsibilities include building Python services and reviewing code.",
+    "steps": [
+      {
+        "text": "Please stop texting me.",
+        "selected_ordinal": null,
+        "expect": {
+          "action": "end",
+          "closed": true,
+          "bookings": 0,
+          "minimum_offers": 0,
+          "cited_answer": false,
+          "closure_reason": "opt_out"
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "information_then_disinterest",
+    "reference_time": "2030-01-07T08:00:00Z",
+    "timezone": "UTC",
+    "calendar_starts": [
+      "2030-01-08T09:00:00Z",
+      "2030-01-08T10:00:00Z",
+      "2030-01-08T11:00:00Z"
+    ],
+    "job_description": "This Python Developer role requires Python, SQL and unit testing. Responsibilities include building Python services and reviewing code.",
+    "steps": [
+      {
+        "text": "Which technical skills does this role require?",
+        "selected_ordinal": null,
+        "expect": {
+          "action": "continue",
+          "closed": false,
+          "bookings": 0,
+          "minimum_offers": 0,
+          "cited_answer": true,
+          "closure_reason": null
+        }
+      },
+      {
+        "text": "I am no longer interested in this position.",
+        "selected_ordinal": null,
+        "expect": {
+          "action": "end",
+          "closed": true,
+          "bookings": 0,
+          "minimum_offers": 0,
+          "cited_answer": false,
+          "closure_reason": "opt_out"
+        }
+      }
+    ]
+  }
+]

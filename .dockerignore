@@ -1,0 +1,23 @@
+# Allowlist: no credentials, input PDFs, private datasets, exports or local venv.
+**
+!Dockerfile
+!requirements.txt
+!LICENSE.md
+!app/
+!app/**
+!streamlit_app/
+!streamlit_app/**
+!.streamlit/
+!.streamlit/config.toml
+!ops/
+!ops/container_entrypoint.py
+!ops/launch_support.py
+!tests/
+!tests/fixtures/
+!tests/fixtures/quality_cases.json
+!tests/fixtures/workflow_cases.json
+**/__pycache__/
+**/*.py[cod]
+**/.DS_Store
+**/.env*
+**/secrets.toml

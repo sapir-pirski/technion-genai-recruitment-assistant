@@ -1,0 +1,30 @@
+[client]
+toolbarMode = "minimal"
+
+[theme]
+base = "light"
+primaryColor = "#21685B"
+backgroundColor = "#F7F7F3"
+secondaryBackgroundColor = "#EEF1EC"
+textColor = "#202722"
+borderColor = "#D8DED7"
+showWidgetBorder = true
+linkColor = "#21685B"
+linkUnderline = true
+grayColor = "#7C8980"
+grayTextColor = "#58635C"
+grayBackgroundColor = "#EEF1EC"
+blueColor = "#21685B"
+blueTextColor = "#21685B"
+blueBackgroundColor = "#E6F0EB"
+greenColor = "#2F6B3C"
+greenTextColor = "#2F6B3C"
+greenBackgroundColor = "#EDF5EB"
+yellowColor = "#8A5A14"
+yellowTextColor = "#8A5A14"
+yellowBackgroundColor = "#FFF5DF"
+redColor = "#B53C32"
+redTextColor = "#B53C32"
+redBackgroundColor = "#FFF0ED"
+codeTextColor = "#202722"
+codeBackgroundColor = "#EEF1EC"

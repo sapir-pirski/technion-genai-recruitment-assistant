@@ -1,0 +1,303 @@
+/* Native containers handle layout; presentation is scoped to our own keys. */
+.stApp {
+  --ui-bg: #f7f7f3;
+  --ui-surface: #ffffff;
+  --ui-field: #eef1ec;
+  --ui-text: #202722;
+  --ui-muted: #58635c;
+  --ui-border: #d8ded7;
+  --ui-input-border: #7c8980;
+  --ui-accent: #21685b;
+  --ui-accent-hover: #194e45;
+  --ui-tint: #e6f0eb;
+  --ui-inverse: #ffffff;
+  --ui-error: #b53c32;
+  --ui-error-bg: #fff0ed;
+  --ui-shadow: #20272226;
+  --ui-composer-space: 0px;
+  --ui-keyboard-inset: 0px;
+  background: var(--ui-bg);
+}
+/* Only the framework's outer spacing needs an override. */
+.stMainBlockContainer { padding-top: 4.5rem; }
+[data-testid="stBottom"] [data-testid="stBottomBlockContainer"] {
+  padding-block: 0.5rem max(0.75rem, env(safe-area-inset-bottom, 0px));
+  background: var(--ui-bg);
+}
+.st-key-workspace, .st-key-composer {
+  color: var(--ui-text);
+  font-size: 1rem;
+  line-height: 1.6;
+  min-width: 0;
+}
+.st-key-workspace { padding-bottom: max(2rem, var(--ui-composer-space)); }
+[data-testid="stMain"] { scroll-padding-bottom: calc(var(--ui-composer-space) + 16px); }
+[data-testid="stBottom"] { bottom: var(--ui-keyboard-inset); }
+.st-key-workspace hr { margin-block: 0.25rem; }
+.st-key-role_header h1 {
+  color: var(--ui-text);
+  font-size: clamp(1.5rem, 3vw, 1.875rem);
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  padding: 0 0 0.25rem;
+}
+.st-key-workspace h2, .st-key-workspace h3 {
+  color: var(--ui-text);
+  font-size: 1.125rem;
+  line-height: 1.4;
+  padding-top: 0;
+}
+.st-key-workspace [data-testid="stCaptionContainer"],
+.st-key-composer [data-testid="stCaptionContainer"],
+.st-key-workspace [data-testid="stCaptionContainer"] p,
+.st-key-composer [data-testid="stCaptionContainer"] p {
+  color: var(--ui-muted);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.st-key-role_header { margin-bottom: 0.25rem; }
+.st-key-role_title { align-items: flex-start; }
+.st-key-header_controls { align-items: flex-start; gap: 0.5rem; }
+.st-key-job_description_reader { width: 100%; max-width: 75ch; margin-inline: auto; }
+.st-key-job_description_reader .job-description :is(h2, h3, h4) {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 1.125rem;
+  line-height: 1.4;
+}
+[data-testid="stDialog"] button[aria-label="Close"] { min-width: 44px; min-height: 44px; }
+.st-key-workspace :is([data-testid="stTextInputRootElement"], [data-testid="stTextAreaRootElement"]),
+.st-key-workspace [data-testid="stSelectbox"] div:has(> input[role="combobox"]),
+.st-key-composer [data-testid="stChatInput"] > div,
+.st-key-introduction_file [data-testid="stFileUploaderDropzone"] {
+  border: 1px solid var(--ui-input-border);
+}
+.st-key-workspace :is([data-testid="stTextInputRootElement"], [data-testid="stTextAreaRootElement"]):focus-within,
+.st-key-workspace [data-testid="stSelectbox"] div:has(> input[role="combobox"]):focus-within,
+.st-key-composer [data-testid="stChatInput"] > div:focus-within {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 1px var(--ui-accent);
+}
+.st-key-workspace :is(input, textarea)::placeholder,
+.st-key-composer textarea::placeholder {
+  color: var(--ui-muted);
+  opacity: 1;
+}
+.st-key-introduction_file [data-testid="stFileUploaderDropzoneInstructions"] small {
+  color: var(--ui-muted);
+}
+.st-key-introduction_tabs [role="tab"] { gap: 0.375rem; }
+.st-key-introduction_tabs [role="tab"]:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+/* Decorative masks follow the native tab text color without changing its label. */
+.st-key-introduction_tabs [role="tab"]::before {
+  content: "";
+  flex: 0 0 1rem;
+  width: 1rem;
+  height: 1rem;
+  background-color: currentColor;
+  -webkit-mask: var(--introduction-tab-icon) center / contain no-repeat;
+  mask: var(--introduction-tab-icon) center / contain no-repeat;
+}
+.st-key-introduction_tabs [role="tab"]:nth-of-type(1) {
+  --introduction-tab-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.75%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%228%22%20r%3D%224%22%2F%3E%3Cpath%20d%3D%22M5%2021v-2a7%207%200%200%201%2014%200v2%22%2F%3E%3C%2Fsvg%3E");
+}
+.st-key-introduction_tabs [role="tab"]:nth-of-type(2) {
+  --introduction-tab-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.75%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%223%22%20y%3D%223%22%20width%3D%2218%22%20height%3D%2218%22%20rx%3D%222%22%2F%3E%3Cpath%20d%3D%22M7.5%2010v7M11.5%2017v-7m0%203a3%203%200%200%201%206%200v4%22%2F%3E%3Ccircle%20cx%3D%227.5%22%20cy%3D%227%22%20r%3D%22.75%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3C%2Fsvg%3E");
+}
+.st-key-introduction_tabs [role="tab"]:nth-of-type(3) {
+  --introduction-tab-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.75%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%2016V3m-5%205%205-5%205%205M4%2016v4a1%201%200%200%200%201%201h14a1%201%200%200%200%201-1v-4%22%2F%3E%3C%2Fsvg%3E");
+}
+.st-key-introduction_tabs [role="tabpanel"] {
+  min-height: 11rem;
+  padding-bottom: 0;
+  box-sizing: border-box;
+}
+/* Keep the native upload control and its accessible name; hide only its text visually. */
+.st-key-introduction_file [data-testid="stFileUploaderDropzone"] > span > button {
+  width: 44px;
+  height: 44px;
+  padding: 10px;
+  border-color: var(--ui-input-border);
+}
+.st-key-introduction_file [data-testid="stFileUploaderDropzone"] > span > button [data-testid="stMarkdownContainer"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.candidate-upload-tooltip {
+  position: fixed;
+  z-index: 1000;
+  width: max-content;
+  max-width: calc(100vw - 80px);
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--ui-text);
+  color: var(--ui-inverse);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: normal;
+  box-shadow: 0 3px 10px var(--ui-shadow);
+  pointer-events: auto;
+}
+.candidate-upload-tooltip[hidden] { display: none; }
+.candidate-upload-tooltip::before {
+  content: ""; position: absolute; left: 0; right: 0; top: -8px; height: 8px;
+}
+.role-location {
+  display: flex; align-items: flex-start; gap: 6px;
+  color: var(--ui-muted); font-size: 0.875rem; line-height: 1.5;
+  margin: 0.25rem 0 0; overflow-wrap: anywhere;
+}
+.role-location svg {
+  flex: 0 0 16px; width: 16px; height: 16px; margin-top: 2px;
+}
+.company-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 48px; height: 48px; box-sizing: border-box;
+  border: 1px solid var(--ui-border); border-radius: 10px;
+  background: var(--ui-surface); overflow: hidden;
+}
+.company-icon img { width: 48px; height: 48px; object-fit: contain; }
+.job-description {
+  color: var(--ui-text);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.job-description p, .job-description ul, .job-description ol { margin: 0 0 0.75rem; }
+.job-description ul, .job-description ol { padding-inline-start: 1.5rem; }
+.job-description li { margin-block: 0.35rem; }
+.job-description li > p { margin-bottom: 0.35rem; }
+.job-description li > ul, .job-description li > ol { margin-block: 0.35rem; }
+.st-key-workspace .job-description h2,
+.st-key-workspace .job-description h3,
+.st-key-workspace .job-description h4 {
+  margin: 1.25rem 0 0.5rem;
+  padding: 0;
+  font-weight: 650;
+}
+.st-key-workspace .job-description h2 { font-size: 1.125rem; }
+.st-key-workspace .job-description h3 { font-size: 1.0625rem; }
+.st-key-workspace .job-description h4 { font-size: 1rem; }
+.st-key-workspace .job-description > :first-child { margin-top: 0; }
+.st-key-workspace [data-testid="stChatMessage"] {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: 14px;
+  margin: 0.25rem 0;
+  padding: 1rem 1.125rem;
+}
+.st-key-workspace [data-testid="stChatMessage"]:has([data-testid="stChatMessageContent"][aria-label="Chat message from user"]) {
+  background: var(--ui-tint);
+  border-color: transparent;
+}
+.st-key-workspace [data-testid="stChatMessageAvatarCustom"] {
+  background: var(--ui-field);
+  border-color: var(--ui-border);
+}
+.st-key-workspace [data-testid="stChatMessageContent"] {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.st-key-workspace [data-testid="stChatMessageContent"] :is(p, ul, ol) { max-width: 75ch; }
+.st-key-workspace button, .st-key-composer button {
+  border-radius: 9px;
+  min-height: 44px;
+}
+.st-key-workspace button[kind="secondary"], .st-key-composer button[kind="secondary"] {
+  background: var(--ui-surface);
+  border-color: var(--ui-input-border);
+  color: var(--ui-text);
+}
+.st-key-workspace button[kind="secondary"]:enabled:hover,
+.st-key-composer button[kind="secondary"]:enabled:hover {
+  background: var(--ui-tint);
+  border-color: var(--ui-accent);
+  color: var(--ui-accent-hover);
+}
+.st-key-workspace button[kind="primary"] {
+  background: var(--ui-accent);
+  border-color: var(--ui-accent);
+  color: var(--ui-inverse);
+}
+.st-key-workspace button[kind="primary"]:enabled:hover {
+  background: var(--ui-accent-hover);
+  border-color: var(--ui-accent-hover);
+  color: var(--ui-inverse);
+}
+.st-key-workspace button:focus-visible, .st-key-composer button:focus-visible {
+  outline: 3px solid var(--ui-accent);
+  outline-offset: 3px;
+}
+.st-key-suggestions button {
+  background: var(--ui-surface);
+  border-color: var(--ui-input-border);
+  color: var(--ui-text);
+  font-size: 0.875rem;
+  white-space: normal;
+  text-align: left;
+  height: 100%;
+  padding: 0.5rem 0.75rem;
+}
+.st-key-suggestions { align-items: stretch; }
+.st-key-composer [data-testid="stChatInputSubmitButton"]:enabled {
+  color: var(--ui-inverse);
+  background: var(--ui-accent);
+}
+.st-key-composer [data-testid="stChatInputSubmitButton"]:enabled:hover {
+  background: var(--ui-accent-hover);
+}
+.st-key-appointment_review, .st-key-booking_receipt, [class*="st-key-slot_card_"] {
+  background: var(--ui-surface);
+  border-radius: 12px;
+}
+.st-key-composer {
+  background: var(--ui-bg);
+  padding: 0.625rem 0 0.125rem;
+}
+.st-key-workspace .st-key-composer { padding-top: 0; }
+.st-key-composer [data-testid="stCaptionContainer"] {
+  font-size: 0.75rem;
+  text-align: center;
+}
+@media (max-width: 640px) {
+  [data-testid="stSelectboxVirtualDropdown"] [role="listbox"][aria-label="Position"] [role="option"] {
+    height: auto; min-height: 44px;
+  }
+  [data-testid="stSelectboxVirtualDropdown"] [role="listbox"][aria-label="Position"] [data-item-hl] {
+    height: auto; min-height: 32px; padding-block: 0.375rem;
+    white-space: normal; overflow-wrap: anywhere;
+  }
+  .st-key-role_header { align-items: flex-start; }
+  .st-key-workspace .st-key-role_header,
+  .st-key-workspace .st-key-appointment_choices,
+  .st-key-suggestions { flex-direction: column; }
+  .st-key-role_header > div,
+  .st-key-appointment_choices > div,
+  .st-key-suggestions > div { width: 100%; min-width: 0; max-width: 100%; }
+  .st-key-role_header > div { flex: 0 1 auto; min-height: 0; }
+  .st-key-header_controls { align-items: flex-start; }
+  .st-key-composer textarea { font-size: 1rem; }
+  .st-key-workspace [data-testid="stChatMessage"] { padding: 0.875rem; }
+  .st-key-composer { padding-bottom: env(safe-area-inset-bottom, 0px); }
+}
+@media print {
+  .st-key-page_actions, .st-key-suggestions,
+  [data-testid="stHeader"], [data-testid="stBottom"] { display: none !important; }
+  html, body, #root, .stApp, [data-testid="stAppViewContainer"],
+  [data-testid="stMain"], .stMainBlockContainer {
+    position: static !important; height: auto !important;
+    overflow: visible !important; max-height: none !important;
+  }
+  .stMainBlockContainer { padding: 0 !important; }
+  .st-key-workspace { padding: 0; width: 100% !important; }
+  .st-key-workspace [data-testid="stChatMessage"] { break-inside: avoid; }
+}
