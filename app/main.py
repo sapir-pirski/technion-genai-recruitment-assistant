@@ -7,6 +7,8 @@ from uuid import uuid4
 from openai import OpenAIError
 
 from app.config import ROOT, Settings
+from app.ingestion.files import ORIGINAL_PDF_NAME
+from app.ingestion.models import ASSIGNMENT_DOCUMENT_ID, DEFAULT_JOB_ID
 from app.observability.logging import configure_logging
 
 
@@ -14,40 +16,22 @@ def main():
     parser = argparse.ArgumentParser(description="Recruitment chatbot tools")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("doctor", help="Check configuration without exposing secrets")
-    ingest = commands.add_parser("ingest", help="Embed every local PDF in data/jobs using OpenAI")
-    ingest.add_argument("--pdf", type=Path, help="Ingest one PDF already inside jobs")
-    ingest.add_argument("--job-id", default="assignment-python-developer")
-    ingest.add_argument("--document-id")
-    sync = commands.add_parser(
-        "sync-jobs", help="Refresh selected PDFs, then ingest the jobs folder"
+    ingest = commands.add_parser("ingest", help="Embed the assignment Python Developer PDF")
+    ingest.add_argument("--pdf", type=Path, help="Path to the assignment PDF in data/jobs")
+    ingest.add_argument("--job-id", choices=[DEFAULT_JOB_ID], default=DEFAULT_JOB_ID)
+    ingest.add_argument(
+        "--document-id", choices=[ASSIGNMENT_DOCUMENT_ID], default=ASSIGNMENT_DOCUMENT_ID
     )
-    sync.add_argument(
-        "--offline", action="store_true", help="Read local PDFs without collecting sources"
-    )
-    sync.add_argument(
-        "--cleanup", action="store_true", help="Remove unreferenced vectors after publication"
-    )
-    sync.add_argument("--trigger", choices=["manual", "scheduled"], default="manual")
-    sync.add_argument(
-        "--limit", type=int, help="Maximum approved imported jobs; never discovers or replaces jobs"
-    )
-    sync.add_argument("--sources", type=Path)
-    export = commands.add_parser(
-        "export-corpus", help="Package current PDFs and their manifest for offline reconstruction"
-    )
-    export.add_argument("--output", type=Path, default=ROOT / "artifacts/job-corpus.zip")
-    commands.add_parser("list-jobs", help="Show job IDs, status, and scheduling capability")
-    commands.add_parser("ingestion-status", help="Show recent synchronization results")
-    commands.add_parser("index-status", help="Check indexed document completeness")
-    bootstrap = commands.add_parser(
-        "bootstrap", help="Initialize storage and ingest every local job PDF"
-    )
+    commands.add_parser("list-jobs", help="Show the assignment role's status")
+    commands.add_parser("index-status", help="Check the assignment PDF's vector index")
+    bootstrap = commands.add_parser("bootstrap", help="Initialize and index the assignment PDF")
     bootstrap.add_argument(
-        "--if-needed",
-        action="store_true",
-        help="Reuse complete indexes when PDFs and manifest are unchanged",
+        "--if-needed", action="store_true", help="Reuse a complete, unchanged index"
     )
-    commands.add_parser("prepare-data", help="Export conversation-grouped benchmark splits")
+    preparation = commands.add_parser(
+        "prepare-data", help="Prepare splits from local benchmark JSON"
+    )
+    preparation.add_argument("--output", type=Path, default=ROOT / "data/processed")
     commands.add_parser(
         "export-conversations", help="Regenerate the conversation JSON snapshot from PostgreSQL"
     )
@@ -62,7 +46,7 @@ def main():
         "add", help="Add an explicitly approved date range; existing slots are preserved"
     )
     for command in (status, add):
-        command.add_argument("--job-id", required=True)
+        command.add_argument("--job-id", choices=[DEFAULT_JOB_ID], default=DEFAULT_JOB_ID)
     status.add_argument("--timezone", help="Display timezone; defaults to the business timezone")
     add.add_argument("--from-date", required=True, type=date.fromisoformat)
     add.add_argument("--to-date", required=True, type=date.fromisoformat)
@@ -82,7 +66,7 @@ def main():
         help="Validate without changing slots; diagnostics are still recorded",
     )
     chat = commands.add_parser("chat", help="Run a terminal conversation")
-    chat.add_argument("--job-id", default="assignment-python-developer")
+    chat.add_argument("--job-id", choices=[DEFAULT_JOB_ID], default=DEFAULT_JOB_ID)
     evaluation = commands.add_parser("evaluate")
     evaluation.add_argument(
         "--split", choices=["train", "validation", "test", "all"], default="test"
@@ -103,7 +87,7 @@ def main():
         help="Explicit Exit provider for reproducible baseline comparisons",
     )
     hf_training = commands.add_parser(
-        "fine-tune-hf", help="Train ModernBERT locally on the stored benchmark and export ONNX"
+        "fine-tune-hf", help="Train ModernBERT locally from benchmark JSON and export ONNX"
     )
     hf_training.add_argument("--output", type=Path, default=ROOT / "artifacts/hf-exit")
     hf_training.add_argument("--epochs", type=int, choices=range(1, 21), default=5)
@@ -119,8 +103,16 @@ def main():
     commands.add_parser(
         "activate-exit-hf", help="Activate the validated local Exit artifact on this machine only"
     )
+    for command in (preparation, evaluation, hf_training, hf_evaluate):
+        command.add_argument("--dataset", type=Path, help="Local benchmark JSON (or DATASET_PATH)")
+        command.add_argument("--dataset-version", help="Benchmark version (or DATASET_VERSION)")
     args = parser.parse_args()
-    settings = Settings()
+    dataset_settings = {}
+    if getattr(args, "dataset", None) is not None:
+        dataset_settings["dataset_path"] = args.dataset
+    if getattr(args, "dataset_version", None) is not None:
+        dataset_settings["dataset_version"] = args.dataset_version
+    settings = Settings(**dataset_settings)
     configure_logging(settings.log_level)
     try:
         if args.command == "doctor":
@@ -137,56 +129,18 @@ def main():
                 "exit_model": settings.model_for("exit"),
                 "exit_provider": settings.exit_provider,
                 "model_policy": settings.model_policy(),
-                "database_driver": make_url(settings.database_url).drivername,
+                "database_driver": make_url(settings.database_url).drivername
+                if settings.database_url
+                else None,
                 "business_timezone": settings.business_timezone,
                 "dataset_version": settings.dataset_version,
                 "document_converter_ready": bool(document_converter()),
             }
         elif args.command == "ingest":
-            if args.pdf:
-                from app.rag.ingest import ingest_pdf
+            from app.rag.ingest import ingest_pdf
 
-                result = ingest_pdf(
-                    args.pdf, settings, job_id=args.job_id, document_id=args.document_id
-                )
-            else:
-                from app.ingestion.sync import sync_jobs
-
-                result = sync_jobs(settings, offline=True, cleanup=True)
-                if result["counts"]["failed"]:
-                    print(json.dumps(result, indent=2))
-                    parser.exit(1, "PDF ingestion had failures; inspect ingestion-status.\n")
-        elif args.command == "sync-jobs":
-            import logging
-
-            from app.ingestion.sync import sync_jobs
-
-            logging.getLogger("httpx").setLevel(logging.WARNING)
-            overrides = {}
-            if args.limit is not None:
-                if not 1 <= args.limit <= 10000:
-                    raise ValueError("Use --limit between 1 and 10000")
-                overrides["corpus_limit"] = args.limit
-            if args.sources:
-                overrides["job_sources_path"] = args.sources
-            settings = settings.model_copy(update=overrides)
-            result = sync_jobs(
-                settings,
-                offline=args.offline,
-                trigger=args.trigger,
-                cleanup=args.cleanup,
-            )
-            if result["counts"]["failed"]:
-                print(json.dumps(result, indent=2))
-                parser.exit(
-                    1,
-                    "Synchronization had failures; inspect ingestion-status and the run report.\n",
-                )
-        elif args.command == "export-corpus":
-            from app.ingestion.export import export_corpus
-
-            result = export_corpus(settings, args.output)
-        elif args.command in ("list-jobs", "ingestion-status", "index-status", "bootstrap"):
+            result = ingest_pdf(args.pdf or settings.job_pdf_path / ORIGINAL_PDF_NAME, settings)
+        elif args.command in ("list-jobs", "index-status", "bootstrap"):
             from app.ingestion.operations import operate
 
             result = operate(
@@ -194,13 +148,7 @@ def main():
             )
             if args.command == "index-status" and not result["complete"]:
                 print(json.dumps(result, indent=2))
-                parser.exit(
-                    1,
-                    "PDF indexes are pending or incomplete. Run ingest with a configured OpenAI API key.\n",
-                )
-            if args.command == "bootstrap" and result["counts"]["failed"]:
-                print(json.dumps(result, indent=2))
-                parser.exit(1, "PDF ingestion had failures; inspect ingestion-status.\n")
+                parser.exit(1, "The assignment PDF index is incomplete. Run ingest.\n")
         elif args.command == "calendar":
             from app.calendar import manage_calendar
 
@@ -219,7 +167,7 @@ def main():
         elif args.command == "prepare-data":
             from app.evaluation.dataset import prepare_dataset
 
-            result = prepare_dataset(settings, ROOT / "data/processed")
+            result = prepare_dataset(settings, args.output)
         elif args.command == "evaluate":
             if args.exit_provider:
                 settings = settings.model_copy(update={"exit_provider": args.exit_provider})

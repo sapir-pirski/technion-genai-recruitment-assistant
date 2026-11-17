@@ -1,6 +1,7 @@
 from langchain_openai import OpenAIEmbeddings
 
 from app.config import Settings
+from app.ingestion.models import ASSIGNMENT_DOCUMENT_ID, DEFAULT_JOB_ID
 from app.observability.tracing import EmbeddingClient
 from app.rag.store import PostgresVectorStore
 
@@ -28,9 +29,9 @@ class JobRetriever:
         self.store = vectorstore(settings, engine=self.registry.engine)
 
     def search(self, query: str, job_id=None) -> list[dict]:
-        from app.ingestion.models import DEFAULT_JOB_ID
-
         job_id = job_id or DEFAULT_JOB_ID
+        if job_id != DEFAULT_JOB_ID:
+            return []
         versions = self.registry.active_versions(job_id, self.settings.index_collection)
         if not versions:
             return []
@@ -54,8 +55,12 @@ class JobRetriever:
 
     def references(self, source_ids, job_id):
         """Resolve saved citations without a model call or another vector search."""
-        if not source_ids:
+        if not source_ids or job_id != DEFAULT_JOB_ID:
             return []
         records = self.store.get(ids=source_ids, job_id=job_id)
-        by_id = dict(zip(records["ids"], records["metadatas"], strict=True))
+        by_id = {
+            key: metadata
+            for key, metadata in zip(records["ids"], records["metadatas"], strict=True)
+            if metadata.get("document_id") == ASSIGNMENT_DOCUMENT_ID
+        }
         return [{"id": key, **by_id[key]} for key in dict.fromkeys(source_ids) if key in by_id]

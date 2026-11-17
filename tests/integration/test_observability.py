@@ -20,7 +20,7 @@ from app.storage.models import Booking, ConversationMessage, TraceSpan
 
 
 def test_history_export_failed_turn_and_replay(benchmark_dataset, service, now, capfd):
-    original_benchmark = benchmark_dataset.load_conversations()
+    original_benchmark = benchmark_dataset.read_bytes()
     private_text = "private candidate history"
     service.backend.plan.return_value = service.backend.plan.return_value.model_copy(
         update={"info_question": "requirements"}
@@ -69,7 +69,7 @@ def test_history_export_failed_turn_and_replay(benchmark_dataset, service, now, 
     assert all(item["label"] is None for item in export[0]["turns"])
     assert export[0]["turns"][1]["predicted_action"] == first.action
     assert service.settings.conversation_export_path.stat().st_mode & 0o777 == 0o600
-    assert benchmark_dataset.load_conversations() == original_benchmark
+    assert benchmark_dataset.read_bytes() == original_benchmark
     diagnostics = capfd.readouterr().err
     assert private_text not in diagnostics and "secret exception contents" not in diagnostics
     assert all(isinstance(json.loads(line), dict) for line in diagnostics.splitlines())

@@ -1,0 +1,140 @@
+[
+  {
+    "conversation_id": 1,
+    "dataset_version": "example-v1",
+    "split": "train",
+    "start_time_utc": "2026-10-01T08:00:00Z",
+    "candidate_phone": null,
+    "recruiter_phone": null,
+    "turns": [
+      {
+        "turn_id": 1,
+        "speaker": "recruiter",
+        "timestamp_utc": "2026-10-01T08:00:00Z",
+        "text": "What is your Python experience?",
+        "label": "continue"
+      },
+      {
+        "turn_id": 2,
+        "speaker": "candidate",
+        "timestamp_utc": "2026-10-01T08:01:00Z",
+        "text": "I use Python.",
+        "label": null
+      },
+      {
+        "turn_id": 3,
+        "speaker": "recruiter",
+        "timestamp_utc": "2026-10-01T08:02:00Z",
+        "text": "Choose an appointment.",
+        "label": "schedule"
+      },
+      {
+        "turn_id": 4,
+        "speaker": "candidate",
+        "timestamp_utc": "2026-10-01T08:03:00Z",
+        "text": "I accept.",
+        "label": null
+      },
+      {
+        "turn_id": 5,
+        "speaker": "recruiter",
+        "timestamp_utc": "2026-10-01T08:04:00Z",
+        "text": "Thank you. Goodbye.",
+        "label": "end"
+      }
+    ],
+    "source_sha256": "1edc71d8704a248389c5096571600aa9e9e2e25d51b23bd632b3ea3f472fcb1e"
+  },
+  {
+    "conversation_id": 2,
+    "dataset_version": "example-v1",
+    "split": "validation",
+    "start_time_utc": "2026-10-02T08:00:00Z",
+    "candidate_phone": null,
+    "recruiter_phone": null,
+    "turns": [
+      {
+        "turn_id": 1,
+        "speaker": "recruiter",
+        "timestamp_utc": "2026-10-02T08:00:00Z",
+        "text": "What is your Python experience?",
+        "label": "continue"
+      },
+      {
+        "turn_id": 2,
+        "speaker": "candidate",
+        "timestamp_utc": "2026-10-02T08:01:00Z",
+        "text": "I use Python.",
+        "label": null
+      },
+      {
+        "turn_id": 3,
+        "speaker": "recruiter",
+        "timestamp_utc": "2026-10-02T08:02:00Z",
+        "text": "Choose an appointment.",
+        "label": "schedule"
+      },
+      {
+        "turn_id": 4,
+        "speaker": "candidate",
+        "timestamp_utc": "2026-10-02T08:03:00Z",
+        "text": "I accept.",
+        "label": null
+      },
+      {
+        "turn_id": 5,
+        "speaker": "recruiter",
+        "timestamp_utc": "2026-10-02T08:04:00Z",
+        "text": "Thank you. Goodbye.",
+        "label": "end"
+      }
+    ],
+    "source_sha256": "1edc71d8704a248389c5096571600aa9e9e2e25d51b23bd632b3ea3f472fcb1e"
+  },
+  {
+    "conversation_id": 3,
+    "dataset_version": "example-v1",
+    "split": "test",
+    "start_time_utc": "2026-10-03T08:00:00Z",
+    "candidate_phone": null,
+    "recruiter_phone": null,
+    "turns": [
+      {
+        "turn_id": 1,
+        "speaker": "recruiter",
+        "timestamp_utc": "2026-10-03T08:00:00Z",
+        "text": "What is your Python experience?",
+        "label": "continue"
+      },
+      {
+        "turn_id": 2,
+        "speaker": "candidate",
+        "timestamp_utc": "2026-10-03T08:01:00Z",
+        "text": "I use Python.",
+        "label": null
+      },
+      {
+        "turn_id": 3,
+        "speaker": "recruiter",
+        "timestamp_utc": "2026-10-03T08:02:00Z",
+        "text": "Choose an appointment.",
+        "label": "schedule"
+      },
+      {
+        "turn_id": 4,
+        "speaker": "candidate",
+        "timestamp_utc": "2026-10-03T08:03:00Z",
+        "text": "I accept.",
+        "label": null
+      },
+      {
+        "turn_id": 5,
+        "speaker": "recruiter",
+        "timestamp_utc": "2026-10-03T08:04:00Z",
+        "text": "Thank you. Goodbye.",
+        "label": "end"
+      }
+    ],
+    "source_sha256": "1edc71d8704a248389c5096571600aa9e9e2e25d51b23bd632b3ea3f472fcb1e"
+  }
+]

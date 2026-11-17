@@ -70,10 +70,10 @@ def scheduling_tool(repository: ScheduleRepository, state: dict):
                 ),
             }
 
-        if not state.get("scheduling_enabled", job_id == DEFAULT_JOB_ID):
+        if job_id != DEFAULT_JOB_ID or not state.get("scheduling_enabled", True):
             return {
                 "status": "unavailable",
-                "message": "This job is available for reference only. Interview availability is not configured; apply through the original employer posting.",
+                "message": "Interview booking is unavailable for this role. A recruiter can clarify availability.",
                 "slots": [],
             }
         existing = repository.get_booking(state["conversation_id"], zone, job_id)

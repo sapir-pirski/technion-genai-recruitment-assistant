@@ -34,7 +34,7 @@ the conversation when appropriate.
 
 | Capability | What the candidate gets |
 |---|---|
-| **Job-grounded answers** | Answers scoped to the selected role, with PDF and page references. |
+| **Job-grounded answers** | Answers grounded in the assignment PDF, with page references. |
 | **Candidate context** | An introduction, a LinkedIn reference, and PDF/DOC/DOCX/TXT uploads read with the next message. |
 | **Interview scheduling** | Up to three available appointments in the browser's timezone, with explicit confirmation. |
 | **Conversation continuity** | Durable messages, profile facts, booking receipts, and graph checkpoints in one database. |
@@ -66,7 +66,7 @@ cp -n .env.example .env
 The app opens at **[localhost:8502](http://127.0.0.1:8502)** by default. The
 launcher checks Python 3.11+ (preferring 3.13), prepares `.venv`, installs missing
 requirements, checks LibreOffice, verifies local model files when activated, and
-initializes or reuses complete PDF indexes. New or changed PDFs need embedding
+initializes or reuses the assignment PDF index. A new or changed assignment PDF needs embedding
 calls. Startup does not scrape jobs, train models, or download trained weights.
 
 ```bash
@@ -83,13 +83,13 @@ ports, and platform details, open the [launcher reference](#reference-installati
 
 ## Try a conversation
 
-Select a role, add background through **Introduce yourself**, and type a message
+Add background through **Introduce yourself**, and type a message
 or choose one of the three fixed starting questions. Details from all introduction
 tabs are read with the next message; later edits accompany a later message.
 
 | Try asking | Expected behavior |
 |---|---|
-| “What skills are required for this role?” | Retrieve the selected job's published description and cite the relevant pages. |
+| “What skills are required for this role?” | Retrieve the assignment job description and cite the relevant pages. |
 | “Do you have anything next Friday morning?” | Resolve the date in context and search approved recruiter availability. |
 | “Please stop texting me.” | End the exchange without consulting scheduling. |
 
@@ -98,8 +98,7 @@ content. Use the introduction or upload a profile document to supply readable
 background. The [candidate-intake reference](#reference-experience) describes
 format checks, consent boundaries, profile merging, and retry behavior.
 
-Only the assignment role has configured recruiter availability. The ten imported
-postings are reference roles; interview requests for them go through the employer.
+The app supports the assignment role and its configured recruiter availability.
 Choosing a time opens a review. A booking is confirmed only after explicit
 acceptance and a successful SQL receipt. Calendar invitations are not sent.
 
@@ -137,9 +136,9 @@ bypass booking consent, source-grounding checks, or closure safeguards.
 | **Exit** | Recommend `end` or `do_not_end`. | Local ModernBERT; prompted GPT-5 nano in the deployed app |
 
 One hosted Neon PostgreSQL database holds application state and vector retrieval:
-**22 tables · 11 job PDFs · 57 published chunks · 1,536-dimensional embeddings**.
-The native app, scheduled worker, and Community Cloud instance use that same
-database. Local model weights and private backup archives stay outside Git.
+**One assignment PDF, with 1,536-dimensional embeddings**.
+The native app and Community Cloud instance use the same database. The existing
+22-table schema is retained for compatibility with stored data. Local model weights and private backup archives stay outside Git.
 
 See the [full workflow](#reference-workflow), [schema](#reference-database), and
 [logging and tracing reference](#reference-observability) for implementation details.
@@ -170,7 +169,7 @@ The executed **[evaluation notebook](tests/test_evals.ipynb)** includes modern
 annotated confusion matrices, class metrics, baseline comparisons, and error IDs.
 It reads saved reports without making model API calls or exposing conversation text.
 A separate controlled replay passed 15 turns across six fictitious cases. The
-repository includes 122 Python tests and five browser-control checks.
+repository includes 138 Python tests and five browser-control checks.
 
 | Runtime | Exit Advisor | Model storage |
 |---|---|---|
@@ -180,6 +179,66 @@ repository includes 122 Python tests and five browser-control checks.
 Training, data isolation, model integrity and evaluation limitations are documented
 in the [fine-tuning reference](#reference-evaluation).
 
+## Assignment checklist
+
+Checked against [TASK.md](TASK.md) on **17 November 2026** for the local
+single-job / JSON-benchmark implementation. **Met** means implementation and local
+evidence are present; **Needs verification** identifies an unresolved submission or
+deployment question; **Missing** would identify an absent required implementation.
+The suggested directory tree in `TASK.md` explicitly allows adjustments.
+
+| Requirement from TASK.md | Status | Implementation and evidence |
+|---|---|---|
+| Python Developer recruitment PoC: gather background, answer questions and arrange or end an interview conversation | Met locally | [Streamlit entry point](streamlit_app/streamlit_main.py), [application service](app/service.py), and [conversation tests](tests/integration/test_conversation.py). One assignment role and PDF. |
+| Main Agent chooses Continue / Schedule / End | Met locally | [Main Agent](app/agents/main_agent.py), [LangGraph workflow](app/graph/builder.py), and routing/closure/booking tests in [test_conversation.py](tests/integration/test_conversation.py). |
+| Exit, Scheduling and Info advisors, coordinated by Main | Met locally | [Advisor modules](app/agents/), [graph](app/graph/builder.py), and advisor consultation / bounded-loop tests in [test_conversation.py](tests/integration/test_conversation.py). |
+| LangChain and OpenAI API endpoint/models | Met locally | [OpenAI adapter](app/agents/backends/openai.py), [configuration](app/config.py), pinned [dependencies](requirements.txt), and [API-contract tests](tests/integration/test_openai_adapter.py). Test provider calls are mocked. The Exit provider exception is listed below. |
+| Offline embedding of the provided PDF into PostgreSQL/pgvector | Met locally | `python -m app.main ingest`; [PDF indexer](app/ingestion/indexer.py), [PostgreSQL vector store](app/rag/store.py), and extraction/index/retrieval/repair tests in [test_rag.py](tests/integration/test_rag.py). Embedding API calls are mocked in automated tests. |
+| Info Advisor answers from job evidence and encourages interview scheduling | Met locally | [Info Advisor](app/agents/info_advisor.py), [Info prompt](app/prompts/info.txt), [Main composition](app/agents/main_agent.py), and grounded-answer / unknown-information / scheduling tests. |
+| SQL function calling, relative dates anchored to conversation time, and three nearest available slots | Met locally | [Scheduling tool](app/tools/scheduling.py), [date handling](app/tools/dates.py), [SQL repository](app/storage/schedule_repository.py), [calendar tests](tests/integration/test_scheduling.py), and [function-call tests](tests/integration/test_openai_adapter.py). |
+| Fine-tuned Exit Advisor | Needs verification for submission | [Local ModernBERT training/export](app/fine_tuning/huggingface.py), [local inference](app/agents/backends/huggingface.py), and the [executed evaluation notebook](tests/test_evals.ipynb) demonstrate a trained classifier and 9/11 held-out predictions. Prior documentation states Hugging Face was approved, but no primary instructor approval record is included. Retain that confirmation and verify the accepted demonstration/deployment arrangement. |
+| Prompt roles, API parameters, instructions and few-shot examples | Met locally | [Prompts](app/prompts/), [model policy](app/config.py), [OpenAI adapter](app/agents/backends/openai.py), and [parameter/role contract tests](tests/integration/test_openai_adapter.py). |
+| Labeled real conversation benchmark, action evaluation, accuracy and confusion matrix notebook | Met locally | Private `data/sms_conversations.json`; [JSON loader and frozen splits](app/evaluation/dataset.py), [evaluation runner](app/evaluation/runner.py), [notebook](tests/test_evals.ipynb), and [JSON validation/leakage tests](tests/unit/test_dataset_json.py). The original dataset fingerprint and 9/3/3 split are preserved. |
+| Streamlit application and Streamlit Community Cloud deployment | Needs verification for this checkpoint | [UI](streamlit_app/streamlit_main.py) and [UI tests](tests/integration/test_streamlit.py) pass locally. A hosted URL is documented, but this local checkpoint has not been pushed/deployed or verified on Community Cloud. Documentation identifies the deployed Exit provider as the prompted baseline; verify whether the fine-tuned advisor must run there. |
+| Git repository, ignore rules, virtual environment, requirements, environment variables and installation/usage documentation | Met locally | [.gitignore](.gitignore), [requirements.txt](requirements.txt), [.env.example](.env.example), [launcher](run-full-project.sh), and this README. `.venv` and configured `.env` are local; credentials are excluded from the checkpoint backup. |
+| App and Streamlit entry points, package initializers and evaluation notebook | Met locally | [app/main.py](app/main.py), [app/__init__.py](app/__init__.py), [streamlit_main.py](streamlit_app/streamlit_main.py), [streamlit_app/__init__.py](streamlit_app/__init__.py), and [test_evals.ipynb](tests/test_evals.ipynb). |
+| Workflow diagram and supplied job PDF | Met locally | [Architecture diagram](#how-it-works) and [assignment PDF](data/jobs/Python%20Developer%20Job%20Description.pdf). |
+
+No required code component is currently classified as **Missing**. Instructor
+approval evidence for the Exit provider and deployment acceptance remain open;
+this checklist does not infer approval from an existing README claim.
+`TASK.md` does not specify a minimum accuracy. The recorded Main score (6/11),
+prompted Exit score (10/11), and fine-tuned Exit score (9/11) remain separate from
+mock-based behavior tests and retain their small-sample limitations. Main and
+prompted-Exit reports are historical model runs; the local Exit result was
+reproduced from the JSON benchmark on 17 November 2026.
+
+The course scope does not require external job collection, company logos,
+multi-role browsing, scheduled corpus synchronization, profile-document intake,
+recording/printing, or detailed operational tracing. The single-role scope and
+file-based benchmark are now explicit; remaining optional features can be assessed
+separately without changing this checklist's requirements.
+
+## Preserved working baseline
+
+The local checkpoint tag is **`baseline-single-job-json`**. Its commit includes the
+single-job simplification, JSON benchmark loader, tests, executed notebook, and this
+checklist. Earlier implementations remain available in Git history.
+
+A dated private backup lives under
+`artifacts/baselines/2026-11-17-baseline-single-job-json/` (Git-ignored). It contains
+the benchmark JSON and generated splits, the selected PyTorch checkpoint and ONNX
+runtime/tokenizer, saved evaluation reports, the executed notebook, actual package
+versions, verification logs, and a SHA-256 inventory. It also includes a Git bundle
+for offline recovery and a source archive of this checkpoint. Credentials and the
+virtual environment are excluded. The backup manifest records the exact commit,
+tag, dataset/model identities and restoration commands.
+
+Historical evaluation reports keep their original filenames and timestamps.
+Save future evaluations to a new `--output` path so this baseline remains
+reviewable. Reproduction uses the supplied private JSON and saved model files;
+the full SQL-backed app additionally needs its configured database and API key.
+
 ## Submission verification
 
 Verified on **8 November 2026** using fictitious candidates and a disposable QA
@@ -188,15 +247,15 @@ database. Production interview slots and bookings are excluded from booking test
 | Check | Evidence |
 |---|---|
 | Main Agent and three advisors | LangGraph routing and Continue / Schedule / End checks; 15/15 controlled replay steps across six cases. |
-| Fine-tuned Exit Advisor | Locally activated ModernBERT; training and held-out comparison in the notebook. Hugging Face is approved for this assignment. The public app uses the prompted OpenAI baseline. |
-| PDF embedding and retrieval | All 11 PDFs / 22 pages validate; 57 published PostgreSQL/pgvector chunks, using 1,536-dimensional OpenAI embeddings. |
+| Fine-tuned Exit Advisor | Locally activated ModernBERT; training and held-out comparison in the notebook. Prior documentation states Hugging Face approval; primary instructor confirmation still needs to be retained. The documented public app uses the prompted OpenAI baseline. |
+| PDF embedding and retrieval | Assignment PDF extraction, page citations, PostgreSQL/pgvector indexing, and incomplete-index repair. |
 | SQL function calling | Three future choices, browser timezone, date interpretation, review/cancel, explicit confirmation and durable booking receipts. |
 | Candidate intake | Automatic combined intake; PDF, DOC, DOCX and TXT read successfully. Invalid type, corrupt PDF and files over 5 MB are rejected. |
-| Guardrails | Untrusted profile instructions, credential redaction, no booking without consent, opt-outs and reference-role employer handoff. |
+| Guardrails | Untrusted profile instructions, credential redaction, no booking without consent, opt-outs. |
 | Browser controls | Original-PDF download matches its source bytes; print-to-PDF preserves the answer; recording downloads locally and releases capture. |
-| Interface | Fixed starters, contextual questions, source references, role/company/location selection and a 390 × 844 responsive check. |
+| Interface | Fixed starters, contextual questions, source references, a fixed Python Developer role and responsive layout. |
 | Persistence and diagnostics | Conversation JSON, checkpoint recovery, duplicate-request protection, trace links and token accounting verified. |
-| Automated checks | 122 Python cases and five browser-control cases covered. Hosted-database UI checks allow 60 seconds for completion; these are behavior checks, not latency benchmarks. |
+| Automated checks | 138 Python cases and five browser-control cases covered. Hosted-database UI checks allow 60 seconds for completion; these are behavior checks, not latency benchmarks. |
 | Repository and setup | Virtual environment, one requirements file, secret-only environment template, launcher, license, contributors and task documentation. |
 | Deployment | [Streamlit Community Cloud](https://technion-genai-recruitment-assistant.streamlit.app) with hosted PostgreSQL/pgvector. |
 
@@ -240,18 +299,19 @@ app/
   prompts/, tools/        Role instructions and validated calendar functions
   storage/                Calendar, sources/profiles, conversation history and JSON export
   observability/          Structured diagnostics, execution spans and token usage
-  rag/, ingestion/        Retrieval, PDFs, source collection, company logos and indexes
+  rag/, ingestion/        Assignment PDF extraction, publication, and vector retrieval
   fine_tuning/            Local ModernBERT training, ONNX export and training data
   evaluation/             Dataset preparation, labeled metrics, offline quality judge and reports
 streamlit_app/            Chat UI, profile inputs, presentation helpers, styles and browser controls
 assets/screenshots/       Interface evidence from fictitious QA scenarios
 .streamlit/config.toml    Single light theme and minimal native toolbar
-config/                   Selected sources and centralized job/PDF manifest
-data/jobs/                The 11 input PDFs, including the assignment
+config/                   Generated summary of the assignment PDF index
+data/jobs/                The assignment Python Developer PDF
+data/sms_conversations.json Private local benchmark input (Git-ignored)
 tests/                    Automated tests and evaluation notebook
   fixtures/quality_cases.json  Independently authored fictitious quality packets
   fixtures/workflow_cases.json Controlled multi-turn booking cases
-ops/                      Venv launcher support, daily scheduling and PDF verification
+ops/                      Venv launcher support
 requirements.txt          All pinned Python dependencies
 packages.txt              LibreOffice system package for Streamlit Community Cloud
 run-full-project.sh       Python/venv setup, dependency checks, bootstrap and app launch
@@ -259,11 +319,10 @@ run-full-project.sh       Python/venv setup, dependency checks, bootstrap and ap
 
 The ignore rules cover the existing `.env`, `.venv/`, Python/test/lint caches,
 `.DS_Store`, generated datasets in `data/processed/`, and generated files under
-`artifacts/`, including local models, backups, logs and exports. Source PDFs in
+`artifacts/`, including local models, backups, logs and exports. The assignment PDF in
 `data/jobs/` and `.env.example` remain tracked. PostgreSQL runtime
 data is retained in Neon.
 `artifacts/conversations.json` is the generated conversation snapshot.
-`artifacts/ingestion/.gitkeep` preserves the scheduler's log directory in the repository.
 
 ## Reference
 
@@ -277,7 +336,7 @@ contracts, recovery behavior, and implementation details.
 | [Candidate intake and interface](#reference-experience) | [Database tables and columns](#reference-database) |
 | [Recruiter calendar](#reference-calendar) | [Conversation history, logs, and traces](#reference-observability) |
 | [Fine-tuning and labeled evaluation](#reference-evaluation) | [PDF sources and ingestion](#reference-ingestion) |
-| [Automated checks](#reference-tests) | [Daily synchronization](#reference-scheduling) |
+| [Automated checks](#reference-tests) | [Assignment PDF](#reference-ingestion) |
 | [Answer-quality judge](#reference-quality) | [Deployment and verification](#reference-deployment) |
 
 <a id="reference-installation"></a>
@@ -322,8 +381,8 @@ An activated local Exit classifier is checked for compatible metadata and file
 checksums before startup. Activation or model identity changes restart the managed
 app. This check does not train, download model weights, or require a Hugging Face
 token for local inference; machines without local activation use the prompted baseline.
-Only new or changed PDFs require embedding calls; ready indexes skip ingestion.
-Online job scraping and model training do not run during startup.
+Only a new or changed assignment PDF requires embedding calls; a ready index skips ingestion.
+Job scraping has been removed. Model training does not run during startup.
 
 If Python is missing, the script uses the official uv installer from
 `https://astral.sh/uv/install.sh` and installs project-managed Python 3.13 under
@@ -403,12 +462,10 @@ Configure application behavior in the `Settings` class in
 | `request_timeout` / `max_retries` | 30 seconds / 2 retries |
 | `max_output_tokens` / `model_temperature` | 1500 / 0.0 for GPT-4o mini; operation-specific limits also apply |
 | `job_data_path` | `data/`; PDF inputs are its `jobs/` child |
-| `job_sources_path` / `job_manifest_path` | `config/job_sources.json` / `config/job_corpus_manifest.json` |
-| `ingestion_report_path` | `artifacts/ingestion/` |
+| `job_manifest_path` | Generated `config/job_corpus_manifest.json` summary |
 | `conversation_export_path` / `log_level` | `artifacts/conversations.json` / `INFO` |
-| `dataset_version` | `assignment-v1`; verified benchmark version read from PostgreSQL |
+| `dataset_version` / `dataset_path` | `assignment-v1` / local `data/sms_conversations.json`; file-based benchmark |
 | `max_advisor_consultations` | 3 advisor visits per user turn; bounds the Main/Advisor loop |
-| `corpus_limit` | 10 selected online postings; manually added PDFs are not limited by this setting |
 | `chunk_size` / `chunk_overlap` / `pipeline_version` | 900 / 120 characters / `jobs-v1` |
 
 Restart the app or notebook kernel after changing configuration. Model access
@@ -496,67 +553,23 @@ The local ModernBERT classifier has no generative prompt or sampling parameters.
 
 ### Candidate experience
 
-Choose a position in the compact header and type directly into the message box, or
-use a suggested question. There is no separate start screen. Try:
+The header shows the assignment's **Python Developer** position. Type directly into
+the message box or use a suggested question. There is no role selector or separate
+start screen. Try:
 
 - “I have four years of Python experience.”
 - “What skills does this role require?”
 - “Do you have anything next Friday morning?”
 - “Please stop texting me.”
 
-The chat has a compact role header with a **Change role** popover instead of a
-second full-width title row. The popover keeps full searchable job names, companies
-and locations; it locks once a conversation starts. **About this role** opens an
-accessible reading dialog with the complete stored description and original posting.
-Escape, the close icon or **Close description** dismisses it and returns focus.
-Descriptions use the source wording without AI rewriting or a
-character limit. Collection preserves headings, emphasis, links, numbered steps,
-and nested bullet lists as canonical Markdown. The UI renders that structure
-with raw HTML and embedded images disabled; it does not guess bullets from
-paragraphs. The reading column is limited to 75 characters in width, with natural
-word wrapping; the dialog scrolls through the complete text without truncation.
-Ingestion retains the full description of local PDFs in `data/jobs/` and the
-full collected description for imported postings. Redundant opening document
-titles, breadcrumbs, standalone application controls, and exact repeated
-introductions are removed from the presentation. Meaningful application steps,
-contact information, requirements and disclosures remain. Metadata labels and
-their values share a line. Opening the dialog reads the last completely indexed
-presentation from PostgreSQL without model calls. The original role is displayed
-as **Python Developer** without an invented employer name. Imported roles show
-their actual employer.
+**About this role** opens an accessible reading dialog with the complete description
+extracted from the assignment PDF. The stored presentation preserves headings,
+emphasis and lists, with raw HTML and embedded images disabled. Opening it makes
+no model calls. Escape, the close icon or **Close description** dismisses it.
 
-Job options show **Job title · Company · Location**, with the published
-workplace type when available. The selected role repeats these details below
-the company name with a small location icon. Multiple locations are retained;
-Remote, Hybrid and On-site appear only when stated by the source. Regional
-restrictions such as **Remote / Berlin, Germany** remain intact, and a mode
-already included in the location is not repeated. Missing or placeholder
-locations produce no label or empty icon. The assignment PDF, IFON PDF and
-Rathin posting do not specify a job location, so their location stays blank.
-Long dropdown options wrap on narrow screens so their locations remain readable.
-
-The UI reads the `jobs.locations` JSONB array and `jobs.workplace_type` fields in
-PostgreSQL. ATS feeds supply these during collection; reviewed employer sources
-use the explicit `locations` and `workplace_type` metadata in
-`config/job_sources.json`. The normal scheduled sync saves that metadata and
-the corpus manifest, so restored catalogs retain it too. Review and update
-the pinned source metadata when an employer changes these details. The browser
-timezone is used for interview times and does not determine a job's location.
-
-The header actions appear in order: **Download PDF**, **Print**, **Record**.
-The PDF icon downloads the currently selected job's PDF while the description
-dialog is closed. It preserves the filename and downloads directly
-without rerunning the conversation. It uses the same outlined SVG, 44 px
-button, teal hover state and dark tooltip below the icon as Print and Record.
-Its tooltip and screen-reader label are **Download job description (PDF)**.
-If a job has several PDFs, each has a download icon with its filename in the
-label. Unavailable PDFs have a disabled control with an explanatory tooltip.
-
-A 48 px company logo aligns with the top of the job title. The company name
-stays below the title in the same text column, including when a long title
-wraps. A missing logo renders no
-icon, initials, placeholder frame, or reserved space; the title uses the freed
-width. Selecting another job changes the logo with its title.
+The header retains **Download PDF**, **Print**, and **Record**. Download PDF returns
+the original assignment document. New conversations always concern the same role.
+Company logos and external employer-posting links have been removed.
 
 The app uses one warm light theme, configured in `.streamlit/config.toml` and the
 shared color variables in `streamlit_app/styles.css`. Streamlit hides the
@@ -577,7 +590,7 @@ Send and confirmation actions use teal, while question buttons stay white with a
 subtle sage hover. Selected tabs retain their underline, and keyboard focus has a
 solid teal outline. Placeholders use the secondary text color. Success messages
 use green, warnings amber, and errors and active recording use red, with their
-existing text and icons. Company logos retain their source colors.
+existing text and icons.
 
 The specified palette pairs provide contrast of 6.57:1 for white on teal,
 6.26:1 for secondary text on white, 5.49:1 for secondary text on input backgrounds,
@@ -714,9 +727,7 @@ is durably recorded can still be repeated. Candidate profiles never enter job RA
 
 The timezone is automatically detected through Streamlit's browser context for
 each new conversation, with `business_timezone` as a fallback when detection is
-unavailable. There is no manual timezone selector. The position dropdown is inside
-**Change role**, with its label available to screen readers. A small **Times shown
-in …** label appears beside available interviews.
+unavailable. A small **Times shown in …** label appears beside available interviews.
 Appointment review and confirmation also include the timezone. Position and
 timezone stay fixed during a conversation so retries and bookings remain consistent.
 **New conversation** starts a fresh thread and clears the form; it preserves
@@ -766,8 +777,7 @@ Before the first message, this composer sits directly below **Introduce yourself
 Once the conversation starts, the input stays pinned to the bottom of the window.
 Displaying the questions does not create a conversation turn or call a model.
 Clicking a question sends its exact text as a normal candidate message and includes the current introduction,
-LinkedIn reference and uploaded document snapshot. For reference postings, interview
-questions still go through the existing employer-only scheduling rules.
+LinkedIn reference and uploaded document snapshot.
 
 After an active assistant answer, three short contextual questions appear inside
 the latest assistant message, beneath its answer. They are questions the candidate
@@ -800,7 +810,7 @@ For a terminal conversation, run `python -m app.main chat`.
 
 ### Recruiter calendar
 
-The assignment role has 160 user-approved, 30-minute appointments for
+The assignment calendar was configured with 160 user-approved, 30-minute appointments for
 **4–17 November 2026**, Sunday–Thursday, **09:00–17:00 Asia/Jerusalem**. SQL stores
 their UTC start times and duration; the UI displays the selected timezone. The
 last start each day is 16:30 local time. The existing historical booking is retained.
@@ -844,7 +854,7 @@ Every appointment must start in the future. An invalid request, duplicate or
 overlapping appointment rejects the entire addition. Per-job database locking
 serializes concurrent calendar additions. Existing appointments, including booked
 or unavailable ones, remain intact. Future slots require a duration for overlap
-validation. The selected job must be active with scheduling enabled; calendar management does not enable imported jobs.
+validation. The selected job must be active with scheduling enabled; calendar management applies to the assignment role.
 
 These commands use PostgreSQL without calling OpenAI. Run the project launcher
 first to initialize storage. Calendar operations use the application’s SQL
@@ -1081,8 +1091,8 @@ recovery reuses the redacted message without repeating completed model work.
 ### Database and schema
 
 One PostgreSQL database with pgvector stores catalog records, embeddings, bookings,
-conversation history, execution traces, and LangGraph checkpoints. All components use the same `DATABASE_URL`.
-The local venv application, scheduled worker and Community Cloud instance connect
+conversation history, execution traces, and LangGraph checkpoints. Runtime storage uses the same `DATABASE_URL`; benchmark input is local JSON.
+The local venv application and Community Cloud instance connect
 to the same hosted database.
 Initialization creates the vector extension and final tables when absent, under
 an advisory lock, without resetting data. The project has no running local database
@@ -1101,7 +1111,7 @@ and [app/storage/models.py](app/storage/models.py); vectors are defined in
 | `job_documents` | `document_id` PK, `job_id` FK, `source_path`, `source_url`, `enabled` |
 | `document_versions` | `document_version_id` PK, `document_id` FK, PDF path and PDF/text SHA-256 hashes, `pdf_data` BYTEA, `presentation` JSONB (canonical text/format, public job metadata, source notes, format version), pipeline/model/dimensions, collection, expected/indexed chunk counts, status, indexing time, error code, `is_active` publication flag |
 | `ingestion_runs` | `run_id` PK, trigger, start/end timestamps, status, aggregate counts, `items` JSONB array of processing outcomes |
-| `sync_leases` | Lease ID, owner, expiration; prevents overlapping corpus writers |
+| `sync_leases` | Lease ID, owner, expiration; prevents overlapping assignment PDF ingestion |
 | `interview_slots` | Slot ID, job ID, UTC start, position, availability, nullable positive `duration_minutes` (unknown for historical records) |
 | `interview_bookings` | Booking ID, job ID, slot FK, conversation ID, request ID, creation time |
 | `rag_collections` | Collection ID PK, embedding model, vector dimensions |
@@ -1111,8 +1121,8 @@ and [app/storage/models.py](app/storage/models.py); vectors are defined in
 | `candidate_sources` | `source_id` PK, conversation FK, initial request ID, source kind, filename/MIME or URL, content SHA-256, pipeline version, byte count, temporary `input_data` BYTEA, `extracted_text`, `facts` JSONB, status, error code/message, attempt count, retryable flag, creation/processing times |
 | `candidate_profiles` | `profile_id` PK, conversation FK, request ID, input fingerprint, source IDs and profile `data` JSONB (sections, evidence, chat updates, verification, conflicts, missing information, source summaries), status, `is_current`, creation time; at most one current profile per conversation |
 | `trace_spans` | `span_id` PK, `trace_id`, parent-span FK, nullable conversation FK, `request_id`, component/operation, start/end/duration, status, model, nullable input/output/cached-input tokens, error code, `attributes` JSONB |
-| `dataset_conversations` | Composite PK `(dataset_version, conversation_id)`, original start time, stored train/validation/test `split`, original `source_sha256`, contact metadata in `source_metadata` JSONB |
-| `dataset_turns` | Composite PK `(dataset_version, conversation_id, turn_id)`, composite conversation FK, `speaker`, original `occurred_at`, `text`, verified `expected_action` |
+| `dataset_conversations` (legacy; unused) | Composite PK `(dataset_version, conversation_id)`, original start time, stored train/validation/test `split`, original `source_sha256`, contact metadata in `source_metadata` JSONB |
+| `dataset_turns` (legacy; unused) | Composite PK `(dataset_version, conversation_id, turn_id)`, composite conversation FK, `speaker`, original `occurred_at`, `text`, verified `expected_action` |
 
 `(source_id, external_job_id)` uniquely identifies a posting. Internal IDs are
 stable across source updates and filenames; the assignment job is
@@ -1163,8 +1173,10 @@ LangGraph manages four tables in this same database: `checkpoints`,
 thread/parent continuity across restarts. `checkpoint_migrations` is LangGraph's
 internal setup bookkeeping and remains required by its checkpoint saver.
 
+The existing schema uses the same hosted Neon PostgreSQL connection. Collection tables
+are retained for compatibility; the current application does not collect external jobs.
 All 22 tables use the same hosted Neon PostgreSQL connection. Document versions
-store PDF bytes for retrieval and downloads; the worker reads input PDFs from
+store PDF bytes for retrieval and downloads; offline ingestion reads the assignment PDF from
 `data/jobs/`. Runtime records, benchmark data and checkpoint state stay in this
 database. Private backup archives belong under Git-ignored `artifacts/backups/`;
 restore them into a separate recovery database and verify them before use.
@@ -1297,8 +1309,8 @@ sections, evidence, conflicts and missing information. Candidate turns contain
 text are excluded from the JSON export. Source hashes do not certify profile
 ownership or the truth of candidate claims. Conversation/source admission shares a
 transaction; source facts and profile publication are idempotent across retries.
-The verified benchmark is stored separately in `dataset_conversations` and
-`dataset_turns`; live conversation recording never adds labels or rows to it.
+The labeled benchmark is a separate local JSON input; live conversation recording
+never changes it or supplies its labels. Legacy SQL benchmark tables remain untouched.
 
 Exporters serialize snapshot reads and replacement with a database lock. A unique
 temporary file is flushed and atomically replaces the JSON with owner-only
@@ -1319,285 +1331,34 @@ snapshot includes all recorded conversations in that database.
 
 <a id="reference-ingestion"></a>
 <details>
-<summary><strong>PDF sources, company logos, and incremental ingestion</strong></summary>
+<summary><strong>Assignment PDF and offline embedding</strong></summary>
 
-### PDFs and incremental ingestion
-
-All 11 inputs, including
-[Python Developer Job Description.pdf](data/jobs/Python%20Developer%20Job%20Description.pdf),
-live directly in [data/jobs/](data/jobs/). This is the only
-PDF input directory. Ingestion extracts actual pages with pypdf; source text is
-never indexed directly and raw HTML captures are not retained. The original
-assignment PDF is unchanged. IFON uses the employer-issued PDF bytes; the other
-nine collected PDFs are attributed snapshots generated from their structured
-source descriptions.
+The app supports one position: **Python Developer** (`assignment-python-developer`).
+Its only job-description input is `data/jobs/Python Developer Job Description.pdf`.
+External job collectors, company logos, generated posting PDFs, and daily synchronization
+have been removed. Other PDFs or legacy job records are excluded from startup,
+retrieval, citations, and the candidate interface.
 
 ```bash
-# Index every local PDF; skip complete unchanged text and clean stale vectors.
+# Explicit offline ingestion: PDF extraction and OpenAI embeddings, without job scraping.
 python -m app.main ingest
-# Refresh the ten selected sources, then index every local PDF.
-python -m app.main sync-jobs --cleanup
-# Skip source collection; embedding calls still use the OpenAI API.
-python -m app.main sync-jobs --offline --cleanup
-python -m app.main list-jobs
-python -m app.main ingestion-status
+# Inspect the assignment's published vector index.
 python -m app.main index-status
+# Used by the existing launcher; unchanged complete indexes need no embedding calls.
+python -m app.main bootstrap --if-needed
 ```
 
-`bootstrap`, used by the startup script, performs local ingestion without fetching
-employer pages. Missing API keys fail before collection or run creation.
-Before publication, the manifest retains pending jobs with zero chunks and no
-document version; they remain excluded from retrieval. `index-status` works
-without an API key and exits nonzero for missing or incomplete indexes.
+Ingestion keeps the existing chunking, page references, PostgreSQL/pgvector storage,
+atomic publication, and incomplete-index repair. If the PDF changes, a replacement
+index is published only after every chunk is present. The prior PDF and index remain
+available if embedding fails. Startup compares the assignment PDF's hash with its
+published index and does not depend on a saved manifest or scan other PDFs.
 
-[config/job_sources.json](config/job_sources.json) defines the ten selected URLs,
-extraction boundaries, explicit metadata, source notes, and reviewed wording
-hashes. [config/job_corpus_manifest.json](config/job_corpus_manifest.json)
-centralizes job/document identities, titles, employers, URLs, paths, hashes, and
-index state, including canonical descriptions and their format. A fresh catalog restores identities from the manifest and rebuilds
-embeddings from the PDFs. The manifest contains no raw HTML, PDF bytes, or credentials.
-
-For reviewed HTML sources, collection selects the configured job section from the
-DOM and converts actual headings, lists, definition lists and numbered cards.
-For native PDFs, PyMuPDF reconstructs visible bullets, wrapped lines and headings
-from text positions and font information. Scans require OCR first. Every semantic
-description block must also occur in the PDF text before publication; a mismatch
-fails indexing instead of showing facts absent from the downloadable document.
-
-Each selected source has a `reviewed_text_sha256` pin calculated from normalized
-description wording. Daily synchronization still checks the sources, but changed
-wording raises `SourceReviewRequired` and retains the published capture. Review
-the employer page, extraction boundaries, metadata and source notes before
-updating that pin and running `sync-jobs --cleanup`. Punctuation and whitespace
-alone do not change the wording pin. No automatic replacements are selected.
-
-#### Company logos
-
-[app/ingestion/logos.py](app/ingestion/logos.py) manages employer identity,
-discovery, image validation, normalization and HTTP caching. Companies are
-deduplicated by their configured website hostname (ignoring `www.`), or by the
-individual provider/board identity when no employer website is known. Shared
-ATS hostnames are not used as company identities. Existing job and source names
-remain the published labels; `company_id` links multiple postings to one image.
-
-Reviewed HTML collectors extract logo candidates from employer Organization
-metadata and branded page elements. Online sync also checks the configured
-company homepage and approved HTML posting when needed. Official touch icons and
-favicons provide a fallback; partner badges and social-media icons are excluded.
-For ATS sources, `website_url` can identify the official company homepage;
-`logo_url` can explicitly select an employer asset in the existing source config.
-`logo_favicon_fallback: false` excludes ambiguous site icons for sources without
-an identifiable employer image. The reviewed EY asset is pinned to a legible
-official icon; Rathin Tech shows no icon while its published logo is unavailable.
-
-Each online `sync-jobs` run refreshes due companies independently of PDF text,
-including when source collection failed. One company is checked at most once per
-UTC day. Requests use ETag/Last-Modified headers when the cached image was built
-by the current logo pipeline. A content hash controls image updates; a new
-normalization version bypasses old HTTP validators and rebuilds the cache.
-Offline ingestion and application startup use stored data and make no logo
-requests. Fresh databases omit logos until the next online sync fetches them.
-
-Downloads require public HTTPS URLs, revalidate redirects, use bounded retries
-and timeouts, and accept at most 2 MB per response. Raster inputs are limited to
-4 million pixels. Supported images become transparent 192 × 192 PNGs, preserving
-aspect ratio, with a 256 KB storage limit. Simple self-contained SVGs are
-supported; scripts, external resources, DTDs and class-based styles are rejected.
-Another candidate is tried when an image cannot be reproduced faithfully.
-
-PNG bytes live only in PostgreSQL, once per company. There is no logo asset
-folder or remote-image request from the candidate UI. The manifest retains
-company identity/website metadata, while full database backups include image
-bytes. Logo updates do not regenerate PDFs or embeddings. Company records stay
-referenced by their source and historical jobs when a posting closes.
-
-Statuses are `ready`, `missing`, `failed`, or `stale` (a refresh failed but the last
-good image is still available). `logo_checked_at` records the latest attempt;
-`logo_updated_at` changes with the image hash. Failures retain the last good
-image, emit a sanitized company/error event, and do not stop PDF processing.
-Ingestion reports/traces include `logos_checked`, `logos_updated`,
-`logos_unchanged`, `logos_missing`, `logos_failed` and `logos_skipped` when
-applicable. Logo failures mark a run partial without changing the PDF failure
-count. The existing daily scheduler runs this refresh through `sync-jobs`.
-
-#### PDF input handling
-
-Generated PDF names use `job-title__company__short-job-id.pdf`, preserving distinct
-jobs with repeated titles. Existing names survive source updates. The assignment
-keeps its original filename and job ID.
-
-To add a role, place a PDF directly in the folder and run `ingest`. Its title and
-employer use PDF metadata when present, otherwise the filename and `Local PDF`.
-A rename with unchanged bytes retains identity when exactly one missing document
-matches its hash. Renaming and editing together, or an ambiguous rename, needs
-the existing document ID. To attach another document to a known job:
-
-```bash
-python -m app.main ingest --pdf data/jobs/additional.pdf \
-  --job-id assignment-python-developer --document-id additional-role-information
-```
-
-The `posting-` document-ID namespace is reserved for collected descriptions.
-Nested directories and PDFs outside the input folder are rejected. Identical
-PDFs at different filenames remain separate documents.
-
-#### Updates, deletion, and recovery
-
-1. A renewable two-hour SQL lease prevents overlapping writers and is checked
-   again during publication.
-2. Online collection checks the reviewed wording pin, then compares selected source content and metadata with SQL.
-   Unchanged sources preserve PDF bytes; changes atomically replace a validated
-   PDF at its existing path. Employer-issued PDFs retain their original bytes.
-3. The scanner extracts and normalizes PDF text. Document identity, text hash,
-   and embedding/chunking configuration determine its index version. PDF metadata
-   changes update the file hash without re-embedding identical text. A local PDF
-   edit rebuilds its displayed description from that PDF; saved website text is
-   reused only when its PDF hash matches.
-4. Changed versions stage vector batches of 32. Publication verifies expected
-   chunk IDs and dimensions before switching the active pointer. The version's
-   description, job metadata, source notes and PDF bytes publish with that pointer.
-   Chat, the role panel and PDF downloads all use the complete published version.
-   Failed updates retain the last complete presentation, download and searchable
-   version, even if collection already replaced the local file. A new role stays
-   hidden until it has a completed index. Missing chunks are repaired on retry.
-5. Missing PDFs disable documents; jobs with no enabled documents become
-   `removed`. Cleanup deletes obsolete/inactive vectors. Re-adding a known file
-   restores identity. An online refresh can recreate a deleted configured PDF;
-   remove its source selection too when permanent removal is intended.
-6. SQL history, the manifest, and JSON reports record outcomes. Partial runs exit
-   nonzero. Two successful absence scans close a remote job; HTTP errors retain it.
-
-Version/hash history, presentation JSON and PDF bytes remain in PostgreSQL;
-cleanup removes obsolete vectors. Paths can point to a newer local file, so the
-UI downloads the published version's stored bytes. These retained PDFs increase
-database size. Back up PostgreSQL, the PDF folder, and manifest together. A manifest
-alone cannot recover deleted PDF content. The manual
-`export-corpus --output PATH` command packages current PDFs and metadata for
-sharing; it does not include bookings, checkpoints, or a database backup.
-Without `--output`, it writes `artifacts/job-corpus.zip` in the existing generated
-artifacts directory.
-
-PDFs are limited to 25 MB and extracted page streams to 20 MB. Scanned or empty
-pages need text-searchable OCR; OCR is not automatic. Generated snapshots include
-source attribution and capture time, use bundled licensed fonts, and reject
-unsupported glyphs. To check content, page bounds, attribution, and rendering:
-
-```bash
-python ops/verify_job_corpus.py
-```
-
-Running the verifier generates reports and rendered pages in
-`artifacts/ingestion/pdf-qa/`. These checks cover PDF content/layout;
-live answer quality requires separate model evaluation.
-
-#### Included source postings
-
-These are captured reference descriptions, not a guarantee of current vacancies.
-Collectors refresh only the selected sources, never discover replacements or apply
-a similarity threshold. ATS adapters also require explicit posting IDs. Collection
-does not scrape LinkedIn or invent requirements.
-
-| Organization | Captured title and source | Local PDF |
-|---|---|---|
-| CheckPayee | [Senior Python Developer – Fraud Detection & Data Analytics](https://verification-of-payee.com/jobs/python-developer) | [PDF](data/jobs/senior-python-developer-fraud-detection-data-analytics__checkpayee__3e6d5053.pdf) |
-| EY | [Senior Consultant - Python Developer (Data Solutions & Analytics)](https://careers.ey.com/ey/job/Toronto-Senior-Consultant-Python-Developer-%28Data-Solutions-%26-Analytics%29-ON-M5H-0B3/1435050133/) | [PDF](data/jobs/senior-consultant-python-developer-data-solutions-analytics__ey__8f98a8e3.pdf) |
-| icogz | [Senior Python Developer](https://www.icogz.com/careers/senior-python-developer) | [PDF](data/jobs/senior-python-developer__icogz__7c0aa073.pdf) |
-| IFON India internet Foundation | [Python Developer](https://iifon.org/wp-content/uploads/2024/05/JD-202402-Python-Developer.pdf) | [PDF](data/jobs/python-developer__ifon-india-internet-foundation__52ebf4c1.pdf) |
-| Linedata | [Python Developer – Pandas Specialist](https://www.linedata.com/job-offer/consultant-python-2026-143) | [PDF](data/jobs/python-developer-pandas-specialist__linedata__d4462be0.pdf) |
-| Rathin Tech | [Python Developer (3–5 Years Experience)](https://www.rathintech.com/careers) | [PDF](data/jobs/python-developer-3-5-years-experience__rathin-tech__dbd0e1e5.pdf) |
-| RITWIK Infotech | [Python Developer](https://www.ritwikinfotech.com/careers) | [PDF](data/jobs/python-developer__ritwik-infotech__69f071da.pdf) |
-| Scry AI | [Python Developer](https://scryai.com/careers/) | [PDF](data/jobs/python-developer__scry-ai__5eca3f35.pdf) |
-| SYMPHONI HR | [Senior Python Developer](https://symphonihr.com/careers/jobs/RtsVsEU7hU2I/) | [PDF](data/jobs/senior-python-developer__symphoni-hr__64b9a081.pdf) |
-| Ubique Systems | [Python Developer](https://www.ubique-systems.com/careers/python-developer-trpd-26-06407) | [PDF](data/jobs/python-developer__ubique-systems__57d455f0.pdf) |
-
-CheckPayee's capture lists `06.07.2025`; its ambiguous numeric date is retained
-without interpreting the month and day. IFON's source URL is dated 2024. SYMPHONI HR
-represents an unnamed financial-services client. Linedata's page heading is
-Consultant - Python, while its description names the Pandas Specialist role; both
-are documented without duplicating the role title. Ubique's Workplace field says
-On-site while its narrative says the work mode is unspecified; its technology
-cards say Required while the narrative says not every listed tool is mandatory.
-Those original statements remain, with source notes advising employer confirmation.
-Specializations include fraud/payments (CheckPayee), banking/lending (EY),
-trading tools (Rathin), and industrial/SAP/GenAI tooling (Ubique). Ubique's required
-and preferred lists overlap. Preserve each source's facts without borrowing
-qualifications, salary, location, or remote policy from other jobs.
-These ten postings are reference data, not additional labeled training examples.
-
-</details>
-
-<a id="reference-scheduling"></a>
-<details>
-<summary><strong>Daily synchronization and worker recovery</strong></summary>
-
-### Daily synchronization
-
-The scheduled command is `ops/run-job-sync.sh`. It reuses `.venv` and reads the
-hosted database connection and OpenAI key from `.env`. Prepare the environment
-first with `./run-full-project.sh`. Scheduled runs do not install dependencies,
-start Streamlit, train models, create interview slots or alter bookings.
-
-The worker refreshes reviewed sources, PDFs, embeddings, descriptions and company
-assets. PostgreSQL leases prevent overlapping corpus writers. Use
-`./ops/run-job-sync.sh --offline` to recheck existing PDFs without fetching sources.
-
-#### macOS
-
-The installer schedules the current user's LaunchAgent at **03:17 Asia/Jerusalem**.
-It requires that system timezone so the trigger follows local daylight-saving changes.
-
-```bash
-# Preview the configuration without installing it.
-python3 ops/install_schedule.py --output /tmp/job-sync.plist
-# Install or replace the schedule.
-python3 ops/install_schedule.py
-launchctl print gui/$(id -u)/com.recruitment.job-sync
-# Run the worker manually.
-./ops/run-job-sync.sh
-# Remove the schedule.
-python3 ops/install_schedule.py --remove
-```
-
-The installed worker runs at **03:17 Asia/Jerusalem** and connects to Neon through
-`.env`. Its plist stores only the command and paths, without credentials. The
-installer uses Python's standard library; the worker requires the prepared venv.
-The user needs a login session and an available host. Use an always-on worker
-host for dependable daily freshness.
-
-#### Linux and hosted workers
-
-Replace both `/opt/recruitment-chatbot` paths in the supplied service with the
-deployment path and prepare `.venv` first. The service user needs access to
-the project environment and its private credentials:
-
-```bash
-mkdir -p ~/.config/systemd/user
-cp ops/recruitment-job-sync.service ops/recruitment-job-sync.timer ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now recruitment-job-sync.timer
-systemctl --user list-timers recruitment-job-sync.timer
-journalctl --user -u recruitment-job-sync.service
-# To stop future scheduled runs:
-systemctl --user disable --now recruitment-job-sync.timer
-```
-
-The timer specifies Asia/Jerusalem and persists missed runs. User-manager
-availability depends on host/login policy. Hosted workers must share the app's
-persistent database, embedding configuration, PDF folder, and manifest.
-A small corpus uses one scheduled command; a separate orchestration platform is
-not needed. A larger pipeline can invoke this same command from its orchestrator.
-
-#### Monitoring and recovery
-
-Runs write SQL history and UUID-named JSON reports under `artifacts/ingestion/`.
-macOS stdout/stderr logs are `scheduled.stdout.log` and `scheduled.stderr.log`;
-rotate append-only logs periodically. Use `ingestion-status` and `index-status`
-to inspect failures. A healthy run has zero failed items and complete indexes.
-
-Source timeouts and errors exit nonzero and need investigation; they do not
-justify deleting jobs. The lease expires after termination, and the next manual or
-scheduled run retries incomplete work. Attach run results to your monitoring
-system for hosted operation; the app sends no automatic email or Slack alerts.
+`config/job_corpus_manifest.json` is a generated summary of the assignment document,
+not an input for restoring other jobs. A fresh database needs only the assignment
+PDF and configured credentials. Previous imported jobs, their vectors, conversations,
+and bookings may remain in an existing database; this change does not delete them.
+The database schema is retained for compatibility.
 
 </details>
 
@@ -1661,60 +1422,59 @@ cost refers to local inference and excludes hardware cost.
 
 #### Benchmark and dataset preparation
 
-The supplied labeled dataset is stored in PostgreSQL as version `assignment-v1`:
-15 conversations, 103 turns, and 59 labeled recruiter turns (25 continue,
-19 schedule, 15 end). There are 15 opening messages and 44 replies to candidate
-messages. Records retain source IDs, timestamps, text, labels, contact metadata,
-the source fingerprint and the 9/3/3 conversation split.
+Training, evaluation and the notebook read the local JSON file
+`data/sms_conversations.json` directly. It contains the supplied 15 conversations,
+103 turns and 59 labeled recruiter turns (25 continue, 19 schedule, 15 end).
+The original 9/3/3 conversation split is frozen in `app/evaluation/dataset.py`:
+train IDs `1,2,3,4,5,6,8,10,14`, validation IDs `7,11,13`, and test IDs `9,12,15`.
+Turns from a conversation never cross partitions. Loading validates IDs, labels,
+speakers, timestamp ordering, source identity and complete partitions.
 
-Set `dataset_version` in `app/config.py` to select a verified benchmark version.
-Preparation, evaluation, and the notebook read these two database tables directly.
-They fail with a restore instruction when the requested version is absent.
-Neon retains the imported benchmark alongside the application tables. A fresh
-independent database needs that benchmark restored from a trusted backup before
-these workflows run. Interactive chat and PDF ingestion do not require it.
+Place your authorized copy of the assignment JSON at that path. The file contains
+private conversations and may include contact metadata, so it is Git-ignored.
+The loader accepts the assignment's list of conversation objects (`conversation_id`,
+`start_time_utc`, optional `candidate_phone`/`recruiter_phone`, and `turns`). Each
+turn supplies `turn_id`, `speaker`, `timestamp_utc`, `text`, and `label` (null for
+candidates; `continue`, `schedule`, or `end` for recruiters).
 
-For private backups, use PostgreSQL 17+ client tools and the provider's direct
-connection. With the plain `postgresql://` URI in `.env`, the following exports
-only the two benchmark tables:
-
-```bash
-umask 077
-set -a
-source .env
-set +a
-pg_dump --dbname="$DATABASE_URL" --format=custom --no-owner --no-privileges \
-  --table=public.dataset_conversations --table=public.dataset_turns \
-  --file=/secure/path/benchmark.dump
-pg_restore --list /secure/path/benchmark.dump
-```
-
-Restore data only into initialized, empty benchmark tables:
+Normalized snapshots can also include `dataset_version`, `source_sha256`, and
+`split` on each conversation. Preserving these fields preserves the dataset
+fingerprint used by existing trained models and reports. Original records without
+them receive `assignment-v1`, the input file's SHA-256, and the frozen split.
+Custom versions must explicitly provide their conversation splits.
 
 ```bash
-pg_restore --dbname="$DATABASE_URL" --data-only --no-owner --no-privileges \
-  /secure/path/benchmark.dump
-```
-
-Keep archives private because they contain original text and contact metadata.
-Full database backups also preserve runtime history, bookings and checkpoints.
-Restore a full archive into an empty recovery database and verify it before use.
-See the official [PostgreSQL backup tool documentation](https://www.postgresql.org/docs/17/app-pgdump.html).
-
-```bash
+# Uses data/sms_conversations.json by default; no PostgreSQL or API key required.
 python -m app.main prepare-data
+# Shareable fictitious example, with output kept separate from the real benchmark.
+python -m app.main prepare-data \
+  --dataset tests/fixtures/benchmark_example.json --dataset-version example-v1 \
+  --output artifacts/benchmark-example
 ```
 
-Generated files in `data/processed/` include a hashed manifest and conversation-grouped
-`train.json`, `validation.json` and `test.json` prefixes. The manifest records the dataset version, original source
-hash, current snapshot hash, and stored split IDs. The assignment benchmark retains
-36/12/11 labeled examples in its 9/3/3 conversation partitions. Inputs exclude target responses, future turns, annotations, and phone
-metadata; phone/email patterns are redacted. Few-shot prompt illustrations are
-independent of evaluation examples.
+`--dataset` and `--dataset-version` also work with `fine-tune-hf`, `evaluate`, and
+`evaluate-exit-hf`. Their environment equivalents are `DATASET_PATH` and
+`DATASET_VERSION`; relative dataset paths resolve against the repository root.
+
+Generated files in `data/processed/` include `train.json`, `validation.json`,
+`test.json`, and a manifest. The manifest records `source: json`, the exact input
+file's SHA-256, the original source fingerprint, normalized dataset fingerprint,
+and split IDs. Changing JSON whitespace does not change a normalized snapshot's
+dataset fingerprint. The assignment retains 36/12/11 labeled examples in its
+9/3/3 conversation partitions. Inputs exclude target responses, future turns,
+annotations and contact metadata; phone/email patterns in history are redacted.
+
+Dataset preparation, local Hugging Face training, local Exit evaluation, the
+prompted Exit benchmark, and this notebook do not need PostgreSQL. Hugging Face
+training downloads its base model when necessary; prompted Exit evaluation needs
+an OpenAI API key. Full Main Agent action evaluation continues to use the
+application's SQL scheduling and PDF retrieval, with an isolated evaluation calendar.
+No workflow automatically restores or loads benchmark tables from a database.
+Legacy benchmark tables in existing databases are retained and are no longer read.
 
 The Exit Advisor emits exactly `end` or `do_not_end`, covering disinterest and
 successful closure. Its recommendation cannot bypass booking validation. Local
-Hugging Face training reads the stored benchmark directly; startup never trains
+Hugging Face training reads the local JSON directly; startup never trains
 models. Evaluate the prompted baseline with an explicit provider:
 
 ```bash
@@ -1725,11 +1485,11 @@ python -m app.main evaluate --split test --task exit --exit-provider openai --ou
 The required [evaluation notebook](tests/test_evals.ipynb) includes accuracy,
 confusion matrices, per-class metrics, a training-derived majority baseline, and
 error analysis, including the local Hugging Face comparison.
-The notebook reads saved reports and the PostgreSQL benchmark; it makes no model calls.
+The notebook reads saved reports and the local JSON benchmark; it makes no model calls or database connections.
 One shared styling cell provides consistent typography, blue/teal bars and confusion
 heatmaps with counts and row shares on a fixed 0–100% color scale. Figures include
 crisp PNG and SVG notebook outputs; chart styling does not change saved metrics.
-On a fresh checkout, restore the private benchmark, run `prepare-data` and explicitly
+On a fresh checkout, supply the private JSON benchmark, run `prepare-data` and explicitly
 run the evaluation commands above with authorized data to create the ignored reports.
 Then execute the notebook. Share its aggregate outputs rather than private examples.
 
@@ -1749,7 +1509,7 @@ Limitations to retain when interpreting results:
 - Conversation 9 labels a confirmation/information turn as `continue`; conversation
   8 continues after a message suggesting disinterest. Preserve labels and inspect disagreements.
 - Hybrid-work and ECS claims in transcripts are absent from the PDF.
-- Only three conversations are held out. Extra job PDFs add reference material,
+- Only three conversations are held out. The assignment PDF supplies job information,
   not labeled examples; live answer quality still needs separate assessment.
 
 Historical reports are explicitly marked `historical_prefix`, with booking correctness
@@ -1904,7 +1664,7 @@ is not available; fixture results do not establish production accuracy.
 
 ### Automated checks
 
-The suite contains **122 Python tests across 14 modules**, plus **5 browser-control
+The suite contains **138 Python tests across 16 modules**, plus **5 browser-control
 checks**: **127 automated checks** in total.
 
 The required `tests/test_evals.ipynb` is executed, with saved accuracy and
@@ -1914,11 +1674,11 @@ confusion-matrix outputs. The automated suite emphasizes these behaviors:
 |---|---|
 | `integration/test_conversation.py`, `test_openai_adapter.py` | Main/advisor routing, continue/schedule/end, SQL tool calling, checkpoint recovery and representative chat/helper model contracts |
 | `integration/test_scheduling.py`, `unit/test_scheduling_rules.py` | Approved calendar additions, overlaps/concurrency, expiration, relative dates/timezones, confirmation, alternatives and booking conflicts |
-| `integration/test_rag.py` | PDF ingestion/update/rename/removal, job isolation, atomic publication, repair, JSONB ingestion outcomes, startup readiness and logo refresh |
-| `integration/test_guardrails.py`, `test_profiles.py`, `unit/test_documents.py` | Consent, untrusted inputs, redaction, citations, profile isolation/recovery, document formats, safe markup and remote-image validation |
+| `integration/test_rag.py` | Assignment PDF ingestion, atomic updates, repair, startup reuse, and legacy-data isolation |
+| `integration/test_guardrails.py`, `test_profiles.py`, `unit/test_documents.py` | Consent, untrusted inputs, redaction, citations, profile isolation/recovery, document formats, safe description markup |
 | `integration/test_observability.py`, `test_suggestions.py` | Conversation JSON, trace/token metadata, retry safety and contextual follow-up persistence/fallbacks |
-| `integration/test_evaluation.py`, `unit/test_evaluation_rules.py` | Labeled splits, leakage prevention, local classifier integrity, grouped benchmark exports and offline judge reports |
-| `integration/test_streamlit.py`, `unit/test_startup.py` | Role/chat and appointment UI smoke tests, venv startup, hosted TLS and credential preservation |
+| `integration/test_evaluation.py`, `unit/test_evaluation_rules.py`, `unit/test_dataset_json.py` | Labeled splits, leakage prevention, local classifier integrity, JSON benchmark validation, grouped splits and offline judge reports |
+| `integration/test_streamlit.py`, `unit/test_startup.py` | Single-role chat and appointment UI smoke tests, venv startup, hosted TLS and credential preservation |
 | `unit/test_page_actions.mjs` | Printing, recording/download, cancellation and capture cleanup |
 
 ```bash
@@ -1942,7 +1702,7 @@ Unit checks can run without PostgreSQL with `python -m pytest -q tests/unit`.
 Integration tests create temporary PostgreSQL databases and require a development
 role with CREATE DATABASE permission; `TEST_DATABASE_URL` can select a separate
 test server. Tests cover booking confirmation/concurrency, conversation recovery,
-job-isolated retrieval, PDF updates/recovery, reviewed source collection, mocked
+assignment-only retrieval, PDF updates/recovery, legacy-data isolation, mocked
 function calling, automatic background intake, multi-format readers, profile recovery,
 advisor reconsultation and negative decisions,
 loop bounds, Streamlit, input rules, and dataset integrity.
@@ -1969,8 +1729,8 @@ Community Cloud is explicitly required by [TASK.md](TASK.md). The application is
 [deployed here](https://technion-genai-recruitment-assistant.streamlit.app) with
 Python 3.13 and the repository’s `streamlit_app/streamlit_main.py` entry point.
 The hosted database is PostgreSQL 17/pgvector on Neon in Frankfurt. Its 22-table
-schema stores the job catalog, 57 active RAG chunks, recruiter calendar, bookings,
-conversations, benchmark, logs and graph checkpoints. Credentials and provisioning
+schema stores the job catalog, assignment RAG index, recruiter calendar, bookings,
+conversations, logs and graph checkpoints. The benchmark is loaded from local JSON. Credentials and provisioning
 records stay Git ignored. Use the provider’s direct connection with TLS and channel
 binding for persistent graph checkpoints. Cloud uses the prompted OpenAI Exit
 Advisor; the local fine-tuned model stays on its training machine.
@@ -1985,10 +1745,6 @@ Advisor; the local fine-tuned model stays on its training machine.
    do not copy local candidate histories, bookings or private benchmark records by default.
    Verify retrieval, timezone handling, booking confirmation/concurrency, opt-out and
    checkpoint recovery before retiring any source database.
-6. Run daily ingestion on a worker with durable PDFs/manifest and the hosted
-   database connection. The installed macOS native worker runs at 03:17
-   Asia/Jerusalem; Community Cloud itself does not run this background schedule.
-   Its host must be available for the scheduled work.
 
 Cloud deployments connect to hosted PostgreSQL directly and use `requirements.txt`
 and `packages.txt`. The local application uses the same code through `.venv`.
@@ -2013,23 +1769,9 @@ conversation recovery.
 <details>
 <summary><strong>Third-party notices and resource attribution</strong></summary>
 
-### Third-party notices
-
-Company logos, job descriptions and source payloads belong to their respective employers or
-publishers. Generated snapshots preserve attribution and capture time; they are
-not employer-issued PDFs, endorsements, or a grant of redistribution rights.
-The MIT license for this project's code does not relicense third-party content.
-
-The regular, bold, oblique and bold-oblique DejaVu Sans fonts in
-`app/ingestion/fonts/` are DejaVu fonts,
-bundled from the Matplotlib distribution. Their Bitstream Vera and
-DejaVu notices and license are reproduced in
-[LICENSE_DEJAVU.txt](app/ingestion/fonts/LICENSE_DEJAVU.txt). These fonts are bundled
-for reproducible PDF generation with accented characters and symbols.
-
-Python dependencies retain their own licenses. The supplied conversation dataset,
-stored in PostgreSQL, and the assignment PDF in `data/jobs/` retain their owners' rights.
+Project code is distributed under the [MIT license](LICENSE.md).
+The supplied assignment PDF and conversation dataset retain their owners' rights.
+They are used as course resources; benchmark text and model weights remain outside
+Git. Third-party Python dependencies retain their respective licenses.
 
 </details>
-
-[Back to top](#top)

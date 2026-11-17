@@ -198,7 +198,7 @@ if [[ -n "$existing_port" ]]; then
     fi
 fi
 if [[ -z "$existing_port" || "$action" == restart ]]; then choose_port; fi
-stage "Checking PDFs and published indexes" .venv/bin/python -m app.main bootstrap --if-needed
+stage "Checking the assignment PDF index" .venv/bin/python -m app.main bootstrap --if-needed
 phase="native application readiness"
 port="$(.venv/bin/python -m ops.launch_support start --port "$port" ${streamlit_args[@]+"${streamlit_args[@]}"})"
 open_page

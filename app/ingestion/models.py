@@ -1,3 +1,9 @@
+"""Assignment PDF storage, with legacy catalog tables retained for database compatibility.
+
+External collection has been removed. Existing companies, imported jobs and ingestion
+history remain untouched; only the assignment role is exposed by JobRegistry.
+"""
+
 from datetime import datetime
 
 from sqlalchemy import (
@@ -18,6 +24,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 DEFAULT_JOB_ID = "assignment-python-developer"
+ASSIGNMENT_DOCUMENT_ID = "assignment-job-description"
 
 
 class CatalogBase(DeclarativeBase):

@@ -1,9 +1,7 @@
 import json
 import subprocess
 from io import BytesIO
-from types import SimpleNamespace
 
-import httpx
 import pytest
 from docx import Document
 from reportlab.pdfgen import canvas
@@ -12,11 +10,7 @@ from app.guardrails import (
     GuardrailViolation,
     model_data,
 )
-from app.ingestion.description import (
-    description_html,
-    html_markdown,
-)
-from app.ingestion.logos import fetch_public, normalize_logo
+from app.ingestion.description import description_html
 from app.profiles import (
     MAX_FILE_BYTES,
     ProfileReadError,
@@ -143,72 +137,19 @@ def test_legacy_doc_is_actually_converted_and_read(tmp_path):
     assert "Python and SQL" in read_document(legacy.read_bytes(), "candidate.doc")
 
 
-@pytest.mark.parametrize(
-    "payload",
-    [
-        b'<!DOCTYPE svg [<!ENTITY x SYSTEM "file:///etc/passwd">]><svg/>',
-        b'<svg xmlns="http://www.w3.org/2000/svg"><use href="https://example.com/remote.svg"/></svg>',
-    ],
-)
-def test_untrusted_svg_references_are_rejected(payload):
-    with pytest.raises(ValueError):
-        normalize_logo(payload)
-
-
-def test_redirect_to_a_private_host_is_rejected_before_the_request(monkeypatch):
-    monkeypatch.setattr(
-        "socket.getaddrinfo", lambda *args, **kwargs: [(2, 1, 6, "", ("93.184.216.34", 443))]
-    )
-    requests = []
-
-    def respond(request):
-        requests.append(str(request.url))
-        return httpx.Response(302, headers={"location": "https://127.0.0.1/logo.png"})
-
-    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
-        with pytest.raises(ValueError, match="public"):
-            fetch_public(
-                client,
-                "https://company.example/logo.png",
-                SimpleNamespace(max_retries=0, request_timeout=1),
-            )
-    assert requests == ["https://company.example/logo.png"]
-
-
-def test_source_structure_and_job_boundaries_survive_collection():
-    payload = """<nav>Other jobs</nav><ul><li><a href="#job"><h5>Python Developer</h5>
-    <h5>Location</h5><h5>London</h5></a><h3>Responsibilities</h3><ul>
-    <li>Build <strong>Python APIs</strong>.</li><li>Use cloud services:<ul>
-    <li>AWS: S3, Lambda</li><li>GCP: BigQuery</li></ul></li></ul>
-    <h3>Interview process</h3><ol><li>Intro call</li><li>Technical interview</li></ol>
-    <a href="https://example.com/apply">Apply now</a><h3>Next role</h3><p>Unrelated work</p></li></ul>"""
-    value = html_markdown(
-        payload, title="Python Developer", start_marker="Python Developer", end_marker="Next role"
-    )
-    rendered = description_html(value, title="Python Developer")
-    assert "Other jobs" not in rendered and "Unrelated work" not in rendered
-    assert "Apply now" not in rendered
-    assert "**Location:** London" in value
-    assert "<strong>Python APIs</strong>" in rendered
-    assert rendered.count("<ul>") == 2 and "<ol>" in rendered
-    assert "  - AWS: S3, Lambda" in value
-
-
-def test_source_markup_cannot_inject_scripts_images_or_unsafe_links():
-    value = html_markdown(
-        "<h1>Python Developer</h1><p>Use <b>Python</b> safely.</p>"
-        '<script>alert(1)</script><img src="https://example.com/track">'
-        '<a href="javascript:alert(1)">Bad link</a>',
-        title="Python Developer",
-    )
-    rendered = description_html(
-        value + "\n\n<script>alert(2)</script>\n\n![image](https://example.com/pixel)"
-    )
-    assert "<script>" not in rendered and "<img" not in rendered
-    assert "javascript:" not in rendered
-
-
 SECRET = "sk-proj-" + "FICTITIOUS_TEST_CREDENTIAL_" * 2
+
+
+def test_pdf_description_markup_cannot_inject_scripts_images_or_unsafe_links():
+    rendered = description_html(
+        "## Responsibilities\n\n- Build **Python APIs**.\n\n"
+        "<script>alert(1)</script>\n\n![image](https://example.com/pixel)\n\n"
+        "[Bad link](javascript:alert(1))"
+    )
+    assert "<h2>Responsibilities</h2>" in rendered
+    assert "<strong>Python APIs</strong>" in rendered
+    assert "<script>" not in rendered and "<img" not in rendered
+    assert 'href="javascript:' not in rendered
 
 
 def test_context_budget_preserves_latest_message_and_full_stored_history():

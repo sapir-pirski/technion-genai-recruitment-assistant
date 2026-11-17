@@ -16,6 +16,8 @@ from sqlalchemy.orm import Session
 
 from app.agents.backends.openai import OpenAIBackend
 from app.config import ROOT, Settings
+from app.ingestion.models import Job
+from app.ingestion.registry import JobRegistry, utcnow
 from app.schemas import (
     ChatProfileUpdate,
     FollowupQuestions,
@@ -25,15 +27,40 @@ from app.schemas import (
     ProfileSections,
 )
 from app.service import ChatService
-from app.storage.database import initialize_database, make_engine
-from app.storage.dataset_repository import DatasetRepository
-from app.storage.models import DatasetConversation, DatasetTurn, Slot
+from app.storage.database import make_engine
+from app.storage.models import Slot
 from app.storage.schedule_repository import ScheduleRepository
 
 
 class EmptyRetriever:
     def search(self, _query, job_id=None):
         return []
+
+
+@pytest.fixture
+def legacy_job():
+    """Simulate an existing imported posting without restoring collection features."""
+    registry = JobRegistry(Settings(_env_file=None))
+    try:
+        with Session(registry.engine) as session, session.begin():
+            session.add(
+                Job(
+                    job_id="reference",
+                    source_id="local:assignment",
+                    external_job_id="legacy",
+                    canonical_url="https://example.com/legacy",
+                    company_name="Example",
+                    title="Legacy Python Role",
+                    description_text="Legacy-only salary USD 200000.",
+                    first_seen_at=utcnow(),
+                    last_seen_at=utcnow(),
+                    status="active",
+                    scheduling_enabled=False,
+                )
+            )
+        return "reference"
+    finally:
+        registry.close()
 
 
 @pytest.fixture
@@ -145,18 +172,20 @@ def database_factory():
         hide_password=False
     )
     names = []
-    with psycopg.connect(admin, autocommit=True) as connection:
 
-        def create():
-            name = "test_recruitment_" + uuid4().hex
+    def create():
+        name = "test_recruitment_" + uuid4().hex
+        with psycopg.connect(admin, autocommit=True, connect_timeout=10) as connection:
             connection.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
-            names.append(name)
-            return parsed.set(database=name).render_as_string(hide_password=False)
+        names.append(name)
+        return parsed.set(database=name).render_as_string(hide_password=False)
 
-        try:
-            yield create
-        finally:
-            for name in reversed(names):
+    try:
+        yield create
+    finally:
+        # Reconnect for cleanup instead of keeping an idle hosted connection per test.
+        for name in reversed(names):
+            with psycopg.connect(admin, autocommit=True, connect_timeout=10) as connection:
                 connection.execute(
                     sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name))
                 )
@@ -172,6 +201,7 @@ def isolated_storage(request, monkeypatch, tmp_path):
     monkeypatch.setenv("OPENAI_API_KEY", "test-only-key")
     backend = request.getfixturevalue("backend")
     monkeypatch.setattr("app.service.OpenAIBackend", lambda settings: backend)
+    monkeypatch.setattr("app.evaluation.runner.OpenAIBackend", lambda settings: backend)
     embeddings = Mock(spec=["embed_documents", "embed_query"])
     vector = [1.0] + [0.0] * 511
     embeddings.embed_documents.side_effect = lambda texts: [list(vector) for _ in texts]
@@ -182,13 +212,9 @@ def isolated_storage(request, monkeypatch, tmp_path):
         raise AssertionError("Use an HTTP mock; tests must never call live APIs")
 
     monkeypatch.setattr(httpx.HTTPTransport, "handle_request", reject_live_http)
-    # HTTP mocks use reserved example domains; avoid real DNS during logo tests.
-    monkeypatch.setattr("app.ingestion.logos.public_addresses", lambda host: {"93.184.216.34"})
     monkeypatch.setenv("JOB_DATA_PATH", str(tmp_path / "data"))
     monkeypatch.setenv("JOB_MANIFEST_PATH", str(tmp_path / "manifest.json"))
-    monkeypatch.setenv("INGESTION_REPORT_PATH", str(tmp_path / "reports"))
     monkeypatch.setenv("CONVERSATION_EXPORT_PATH", str(tmp_path / "conversations.json"))
-    monkeypatch.setenv("JOB_SOURCES_PATH", str(tmp_path / "sources.json"))
     directory = tmp_path / "data/jobs"
     directory.mkdir(parents=True)
     original = ROOT / "data/jobs/Python Developer Job Description.pdf"
@@ -235,44 +261,10 @@ def benchmark_conversations():
 
 
 @pytest.fixture
-def benchmark_dataset(monkeypatch, benchmark_conversations):
+def benchmark_dataset(monkeypatch, benchmark_conversations, tmp_path):
+    path = tmp_path / "benchmark.json"
+    path.write_text(json.dumps(benchmark_conversations, indent=2))
+    path.chmod(0o600)
     monkeypatch.setenv("DATASET_VERSION", "test-v1")
-    settings = Settings()
-    engine = make_engine(settings.database_url)
-    initialize_database(engine)
-    with Session(engine) as session, session.begin():
-        session.add_all(
-            [
-                DatasetConversation(
-                    dataset_version=row["dataset_version"],
-                    conversation_id=row["conversation_id"],
-                    started_at=datetime.fromisoformat(row["start_time_utc"].replace("Z", "+00:00")),
-                    split=row["split"],
-                    source_sha256=row["source_sha256"],
-                    source_metadata={"candidate_phone": None, "recruiter_phone": None},
-                )
-                for row in benchmark_conversations
-            ]
-        )
-        session.flush()
-        session.add_all(
-            [
-                DatasetTurn(
-                    dataset_version=row["dataset_version"],
-                    conversation_id=row["conversation_id"],
-                    turn_id=turn["turn_id"],
-                    speaker=turn["speaker"],
-                    occurred_at=datetime.fromisoformat(
-                        turn["timestamp_utc"].replace("Z", "+00:00")
-                    ),
-                    text=turn["text"],
-                    expected_action=turn["label"],
-                )
-                for row in benchmark_conversations
-                for turn in row["turns"]
-            ]
-        )
-    try:
-        yield DatasetRepository(engine, settings.dataset_version)
-    finally:
-        engine.dispose()
+    monkeypatch.setenv("DATASET_PATH", str(path))
+    return path

@@ -1,6 +1,4 @@
 import json
-from collections import Counter
-from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -8,44 +6,20 @@ import httpx
 import pytest
 from langchain_openai import ChatOpenAI
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.agents.backends.common import prompt_manifest
 from app.agents.backends.openai import OpenAIBackend
 from app.config import Settings
-from app.evaluation.dataset import SPLIT_NAMES, load_examples, prepare_dataset, split_examples
 from app.evaluation.judge import evaluate_quality
 from app.evaluation.runner import evaluate
 from app.evaluation.workflow import evaluate_workflows
-from app.storage.dataset_repository import DatasetRepository
-from app.storage.models import Booking, Conversation, ConversationMessage, DatasetTurn, TraceSpan
-
-
-def test_postgres_dataset_roundtrip_and_grouped_export(
-    benchmark_dataset, benchmark_conversations, tmp_path
-):
-    assert benchmark_dataset.load_conversations() == benchmark_conversations
-    settings = Settings()
-    examples = load_examples(settings)
-    assert len(examples) == 9
-    assert Counter(row["label"] for row in examples) == {"continue": 3, "schedule": 3, "end": 3}
-    manifest = prepare_dataset(settings, tmp_path)
-    assert manifest["source"] == "postgresql" and manifest["dataset_version"] == "test-v1"
-    assert manifest["splits"] == {"train": [1], "validation": [2], "test": [3]}
-    assert manifest["source_sha256"] == benchmark_conversations[0]["source_sha256"]
-    assert len(manifest["dataset_sha256"]) == 64
-    for split in SPLIT_NAMES:
-        rows = json.loads((tmp_path / f"{split}.json").read_text())
-        assert rows == split_examples(examples, split)
-        assert {row["conversation_id"] for row in rows} == set(manifest["splits"][split])
-    with pytest.raises(ValueError, match="Restore dataset_conversations"):
-        DatasetRepository(benchmark_dataset.engine, "missing-version").load_conversations()
+from app.storage.models import Booking, Conversation, ConversationMessage, TraceSpan
 
 
 @pytest.mark.parametrize("task", ["actions", "exit"])
 def test_evaluation_uses_stored_splits_and_preserves_benchmark(benchmark_dataset, task, backend):
-    before = benchmark_dataset.load_conversations()
+    before = benchmark_dataset.read_bytes()
     report = evaluate(Settings(), split="test", task=task)
     assert report["all_turns"]["count"] == 3
     assert report["dataset_version"] == "test-v1" and len(report["dataset_sha256"]) == 64
@@ -54,9 +28,20 @@ def test_evaluation_uses_stored_splits_and_preserves_benchmark(benchmark_dataset
     assert (
         report["evaluation_mode"] == "historical_prefix" and report["booking_correctness"] is None
     )
-    assert benchmark_dataset.load_conversations() == before
-    with Session(benchmark_dataset.engine) as session:
-        assert session.scalar(select(func.count()).select_from(Conversation)) == 0
+    assert benchmark_dataset.read_bytes() == before
+    from app.storage.database import make_engine
+
+    engine = make_engine(Settings().database_url)
+    try:
+        if task == "actions":
+            with Session(engine) as session:
+                assert session.scalar(select(func.count()).select_from(Conversation)) == 0
+        else:
+            from sqlalchemy import inspect
+
+            assert not inspect(engine).has_table("conversations")
+    finally:
+        engine.dispose()
     if task == "exit":
         backend.exit_label.side_effect = TimeoutError("private provider error")
     else:
@@ -109,28 +94,6 @@ def test_stateful_workflow_replay_preserves_public_calendar_and_excludes_expecta
         assert session.scalar(select(func.count()).select_from(Slot)) == before
         assert session.scalar(select(func.count()).select_from(Booking)) == 0
         assert session.scalar(select(func.count()).select_from(Conversation)) == 0
-
-
-def test_database_rejects_candidate_gold_label(benchmark_dataset):
-    before = benchmark_dataset.load_conversations()
-    with (
-        pytest.raises(IntegrityError),
-        Session(benchmark_dataset.engine) as session,
-        session.begin(),
-    ):
-        session.add(
-            DatasetTurn(
-                dataset_version="test-v1",
-                conversation_id=1,
-                turn_id=99,
-                speaker="candidate",
-                occurred_at=datetime.now(UTC),
-                text="Invalid test label",
-                expected_action="end",
-            )
-        )
-        session.flush()
-    assert benchmark_dataset.load_conversations() == before
 
 
 def packet(case_id="test-answer"):

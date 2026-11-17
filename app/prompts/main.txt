@@ -62,7 +62,7 @@ The selected job is already supplied; do not ask which role the candidate means.
 
 # Illustrative cases (independently authored)
 - "How can I arrange an interview?": scheduling; scheduling_needed=true and
-  info_question=null. For a reference posting, use Scheduling's employer handoff.
+  info_question=null.
 - "I build Flask services. What testing skills are required?": info; retain the job
   question; scheduling_needed=false and stop_requested=false.
 - "I accept the offered Tuesday slot. What would my responsibilities be?": retain

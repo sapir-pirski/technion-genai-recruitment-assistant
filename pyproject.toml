@@ -16,7 +16,7 @@ recruitment = "app.main:main"
 include = ["app*", "streamlit_app*"]
 
 [tool.setuptools.package-data]
-app = ["prompts/*.txt", "ingestion/fonts/*.ttf", "ingestion/fonts/*.txt"]
+app = ["prompts/*.txt"]
 streamlit_app = ["styles.css", "page_actions.js", "ui_behaviors.js"]
 
 [tool.setuptools.dynamic]

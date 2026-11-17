@@ -1,13 +1,12 @@
-"""Source-aware descriptions shared by collection, PDF generation and the UI."""
+"""Extract and display the assignment PDF's description without rewriting it."""
 
 import re
 import unicodedata
-from urllib.parse import urljoin, urlsplit
 
 import pymupdf
-from bs4 import BeautifulSoup, Comment
 from markdown_it import MarkdownIt
-from markdownify import markdownify
+
+from app.ingestion.normalize import html_text
 
 FORMAT_VERSION = "descriptions-v2"
 MARKDOWN = MarkdownIt("commonmark", {"html": False}).enable("table").disable("image")
@@ -117,208 +116,6 @@ def clean_markdown(value, title):
     return re.sub(r"\n{3,}", "\n\n", "\n\n".join(result)).strip()
 
 
-def _anchor(soup, marker, *, after=-1, title=""):
-    strings = list(soup.find_all(string=True))
-    positions = {id(node): index for index, node in enumerate(strings)}
-    first = marker.strip().splitlines()[0]
-    if first.startswith("Home / Careers /"):
-        first = title
-    matches = [
-        node
-        for node in strings
-        if positions[id(node)] > after and text_key(str(node)) == text_key(first)
-    ]
-    if not matches:
-        raise ValueError("Reviewed job section boundary changed; manual review is required")
-    if after < 0:
-        headings = [node for node in matches if node.find_parent(re.compile(r"^h[1-6]$"))]
-        if headings:
-            matches = headings
-    return positions[id(matches[0])]
-
-
-def _semantic_cards(soup):
-    """Preserve explicitly numbered cards and check-mark lists used by employers."""
-    for parent in list(soup.find_all("div")):
-        if parent.parent is None:
-            continue
-        cards = parent.find_all("article", recursive=False)
-        if len(cards) >= 2 and all(card.find(re.compile(r"^h[1-6]$")) for card in cards):
-            numbers = [
-                card.find(string=lambda text: text and re.fullmatch(r"\s*\d{2}\s*", text))
-                for card in cards
-            ]
-            if all(numbers):
-                ordered = soup.new_tag("ol")
-                for card, number in zip(cards, numbers, strict=True):
-                    number.extract()
-                    item = soup.new_tag("li")
-                    for heading in card.find_all(re.compile(r"^h[1-6]$")):
-                        heading.name = "span"
-                    item.string = _text(card.get_text(" ", strip=True))
-                    ordered.append(item)
-                parent.replace_with(ordered)
-                continue
-        cards = parent.find_all("div", recursive=False)
-        if len(cards) >= 2 and all(
-            len(card.select("svg.lucide-check")) == 1 and len(card.find_all("p")) == 1
-            for card in cards
-        ):
-            unordered = soup.new_tag("ul")
-            for card in cards:
-                item = soup.new_tag("li")
-                for child in list(card.find("p").contents):
-                    item.append(child.extract())
-                unordered.append(item)
-            parent.replace_with(unordered)
-
-
-def html_markdown(payload, *, title, start_marker=None, end_marker=None, base_url=""):
-    soup = BeautifulSoup(payload, "html.parser")
-    for tag in list(soup.find_all(["script", "style", "noscript", "iframe"])):
-        tag.decompose()
-    for node in soup.find_all(string=lambda text: isinstance(text, Comment)):
-        node.extract()
-    if start_marker:
-        start = _anchor(soup, start_marker, title=title)
-        end = (
-            _anchor(soup, end_marker, after=start)
-            if end_marker
-            else len(list(soup.find_all(string=True)))
-        )
-        for index, node in enumerate(list(soup.find_all(string=True))):
-            if index < start or index >= end:
-                node.extract()
-    _semantic_cards(soup)
-    for tag in list(soup.find_all(["svg", "img", "input", "button", "nav", "footer", "aside"])):
-        tag.decompose()
-    for tag in reversed(list(soup.find_all(True))):
-        if tag.parent is not None and tag.name != "br" and not tag.get_text(strip=True):
-            tag.decompose()
-    for heading in list(soup.find_all(re.compile(r"^h[1-6]$"))):
-        if not _title_line(heading.get_text(" ", strip=True), title):
-            continue
-        for parent in list(heading.parents):
-            if parent.name == "li" and parent.parent and parent.parent.name in {"ul", "ol"}:
-                listing = parent.parent
-                if len(listing.find_all("li", recursive=False)) == 1:
-                    parent.unwrap()
-                    listing.unwrap()
-    for tag in soup.find_all("div"):
-        classes = " ".join(tag.get("class", []))
-        spans = tag.find_all("span", recursive=False)
-        if (
-            re.search(r"meta|badge|chip", classes, re.IGNORECASE)
-            and len(spans) >= 2
-            and len(tag.get_text()) <= 160
-        ):
-            value = " · ".join(_text(span.get_text(" ", strip=True)) for span in spans)
-            if text_key(tag.get_text(" ", strip=True)) == text_key(
-                " ".join(span.get_text(" ", strip=True) for span in spans)
-            ):
-                tag.clear()
-                tag.string = value
-    for anchor in list(soup.find_all("a")):
-        if CTA.fullmatch(_text(anchor.get_text(" ", strip=True))):
-            anchor.decompose()
-            continue
-        if anchor.get("href", "").startswith("#"):
-            anchor.unwrap()
-            continue
-        href = urljoin(base_url, anchor.get("href", ""))
-        parsed = urlsplit(href)
-        if (
-            parsed.fragment
-            and parsed._replace(fragment="").geturl()
-            == urlsplit(base_url)._replace(fragment="").geturl()
-        ):
-            anchor.unwrap()
-            continue
-        if urlsplit(href).scheme not in {"https", "http", "mailto"}:
-            anchor.unwrap()
-        else:
-            anchor["href"] = href
-    for term in list(soup.find_all("dt")):
-        definition = term.find_next_sibling("dd")
-        if definition:
-            paragraph = soup.new_tag("p")
-            paragraph.string = (
-                _text(term.get_text(" ", strip=True))
-                + ": "
-                + _text(definition.get_text(" ", strip=True))
-            )
-            term.replace_with(paragraph)
-            definition.decompose()
-    for paragraph in list(soup.find_all("p")):
-        leading = paragraph.find(["strong", "b"], recursive=False)
-        if leading and HEADING.match(_text(leading.get_text())) and len(leading.get_text()) < 100:
-            before = "".join(str(node) for node in leading.previous_siblings).strip()
-            rest = (
-                paragraph.get_text(" ", strip=True)
-                .removeprefix(leading.get_text(" ", strip=True))
-                .strip()
-            )
-            if not before and rest:
-                heading = soup.new_tag("h2")
-                heading.string = leading.get_text(" ", strip=True)
-                heading["data-description-heading"] = "promoted"
-                paragraph.insert_before(heading)
-                leading.decompose()
-                for child in list(paragraph.children):
-                    if getattr(child, "name", None) == "br":
-                        child.decompose()
-                    elif str(child).strip():
-                        break
-        text = _text(paragraph.get_text(" ", strip=True))
-        if not text or len(text) > 100 or paragraph.find_parent(["li", "td", "th"]):
-            continue
-        if "eyebrow" in paragraph.get("class", []):
-            strong = soup.new_tag("strong")
-            for child in list(paragraph.contents):
-                strong.append(child.extract())
-            paragraph.append(strong)
-            continue
-        if (HEADING.match(text) and not re.search(r"[.!?]", text.rstrip(".?"))) or (
-            paragraph.find(["strong", "b"], recursive=False)
-            and _text(paragraph.get_text()) == _text(paragraph.find(["strong", "b"]).get_text())
-            and not _title_line(text, title)
-        ):
-            paragraph.name = "h2"
-            paragraph["data-description-heading"] = "promoted"
-    headings = soup.find_all(re.compile(r"^h[1-6]$"))
-    for tag in headings:
-        if re.match(
-            r"^(?:Location|Worksite|Salary|Posted|Experience|Employment|Workplace)(?:\s*:|$)",
-            tag.get_text(" ", strip=True),
-            re.IGNORECASE,
-        ):
-            tag.name = "p"
-    headings = soup.find_all(re.compile(r"^h[1-6]$"))
-    levels = [
-        int(tag.name[1])
-        for tag in headings
-        if not _title_line(tag.get_text(), title) and not tag.get("data-description-heading")
-    ]
-    minimum = min(levels, default=2)
-    for tag in headings:
-        if tag.get("data-description-heading"):
-            level = (
-                3
-                if tag.get_text()
-                .strip()
-                .casefold()
-                .startswith(("core technical", "additional tools"))
-                else 2
-            )
-        else:
-            level = max(2, min(4, int(tag.name[1]) - minimum + 2))
-        tag.name = "h" + str(level)
-    value = markdownify(
-        str(soup), heading_style="ATX", bullets="-", wrap=False, newline_style="SPACES"
-    )
-    return clean_markdown(value, title)
-
-
 def plain_markdown(value, title):
     """Conservative fallback for genuine plain text; explicit bullet characters survive."""
     lines = []
@@ -408,7 +205,7 @@ def description_html(value, *, title="", format="markdown"):
 
 def markdown_text(value):
     """Semantic comparison and unsupported-character validation, without markup."""
-    return BeautifulSoup(MARKDOWN.render(value), "html.parser").get_text(" ", strip=True)
+    return html_text(MARKDOWN.render(value)).replace("\n", " ")
 
 
 def presentation_for(job, markdown, *, notices=None):

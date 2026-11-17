@@ -3,6 +3,8 @@ from sqlalchemy.engine import Engine, make_url
 
 
 def make_engine(url: str) -> Engine:
+    if not url:
+        raise ValueError("Set DATABASE_URL before running the database-backed application")
     parsed = make_url(url)
     if parsed.get_backend_name() != "postgresql":
         raise ValueError("The application requires PostgreSQL with pgvector")

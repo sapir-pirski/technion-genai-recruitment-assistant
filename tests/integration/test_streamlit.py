@@ -7,83 +7,23 @@ from app.suggestions import STARTER_QUESTIONS
 UI_TIMEOUT = 60
 
 
-def test_select_reference_job_and_start_conversation(backend):
-    from app.config import Settings
-    from app.ingestion.registry import JobRegistry
-
-    backend.plan.return_value = backend.plan.return_value.model_copy(
-        update={"scheduling_needed": True}
-    )
-    description = (
-        "Responsibilities:\n• "
-        + "Build Python services and maintain reliable data pipelines. " * 20
-        + "\nQualifications:\n• Experience with Python, SQL and generic types such as <T>."
-        "\nBenefits:\nThe complete description ends with professional development support."
-    )
-    registry = JobRegistry(Settings(_env_file=None))
-    try:
-        registry.source({"provider": "greenhouse", "board": "example", "company": "Example"})
-        registry.save_job(
-            {
-                "job_id": "reference",
-                "source_id": "greenhouse:example",
-                "external_job_id": "1",
-                "canonical_url": "https://example.com/1",
-                "company_name": "Example",
-                "title": "Python Backend Engineer",
-                "description_text": description,
-                "locations": [{"location_text": "London"}, {"location_text": "Unknown"}],
-                "workplace_type": "hybrid",
-            }
-        )
-    finally:
-        registry.close()
+def test_only_assignment_job_is_shown_with_legacy_postings_in_storage(backend, legacy_job):
     test = AppTest.from_file(str(ROOT / "streamlit_app/streamlit_main.py")).run(timeout=UI_TIMEOUT)
     assert not test.exception
-    starters = [question.text for question in STARTER_QUESTIONS]
+    assert test.title[0].value == "Python Developer"
+    assert not test.selectbox
+    assert not any(item.label == "Change role" for item in test.get("popover"))
     assert [
         button.label for button in test.button if (button.key or "").startswith("suggestion_")
-    ] == starters
+    ] == [question.text for question in STARTER_QUESTIONS]
     assert not test.chat_message
-    assert not any('class="role-location"' in item.proto.body for item in test.get("html"))
-    assert (
-        "Python Backend Engineer · Example · London · Hybrid"
-        in test.selectbox(key="selected_job_id").options
-    )
-    test.selectbox(key="selected_job_id").select("reference").run(timeout=UI_TIMEOUT)
-    assert not test.exception
-    assert [
-        button.label for button in test.button if (button.key or "").startswith("suggestion_")
-    ] == starters
+    backend.plan.assert_not_called()
     test.button(key="job_details").click().run(timeout=UI_TIMEOUT)
     assert not test.exception
-    rendered = next(
-        item.proto.body for item in test.get("html") if 'class="job-description"' in item.proto.body
-    )
-    assert description.splitlines()[-1] in rendered
-    assert "<h2>Responsibilities:</h2>" in rendered and "<ul>" in rendered
-    assert "&lt;T&gt;" in rendered
-    location = next(
-        item.proto.body for item in test.get("html") if 'class="role-location"' in item.proto.body
-    )
-    assert "London · Hybrid" in location and "Unknown" not in location
-    assert not any("Excerpt from" in item.value for item in test.caption)
-    backend.plan.assert_not_called()
     test.button(key="close_description").click().run(timeout=UI_TIMEOUT)
-    test.selectbox(key="selected_job_id").select("assignment-python-developer").run(
-        timeout=UI_TIMEOUT
-    )
-    assert not any('class="job-description"' in item.proto.body for item in test.get("html"))
-    assert not any('class="role-location"' in item.proto.body for item in test.get("html"))
-    test.selectbox(key="selected_job_id").select("reference").run(timeout=UI_TIMEOUT)
-    test.chat_input[0].set_value("Hi, I would like an interview").run(timeout=UI_TIMEOUT)
+    test.chat_input[0].set_value("Hello, I use Python").run(timeout=UI_TIMEOUT)
     assert not test.exception
-    assert test.selectbox(key="selected_job_id").disabled
-    assert test.title[0].value == "Python Backend Engineer"
-    test.chat_input[0].set_value("Schedule an interview").run(timeout=UI_TIMEOUT)
-    assert not test.exception
-    assert any("reference only" in message.markdown[0].value for message in test.chat_message)
-
+    assert test.title[0].value == "Python Developer" and not test.selectbox
     test.chat_input[0].set_value("Please stop texting me").run(timeout=UI_TIMEOUT)
     assert not test.exception
     assert any("conversation is complete" in item.value for item in test.caption)
@@ -176,7 +116,7 @@ def test_review_booking_retry_and_new_conversation(backend, repository, monkeypa
     assert not test.exception
     assert test.chat_input and len(test.chat_message) == 0
     assert test.session_state.timezone == "Asia/Jerusalem"
-    assert len(test.selectbox) == 1
+    assert not test.selectbox
     next(
         button for button in test.button if button.label == "How can I arrange an interview?"
     ).click().run(timeout=UI_TIMEOUT)
@@ -224,7 +164,7 @@ def test_review_booking_retry_and_new_conversation(backend, repository, monkeypa
     assert not test.exception
     assert test.session_state.conversation_id != old_conversation
     assert test.session_state.timezone == "America/New_York"
-    assert not test.selectbox(key="selected_job_id").disabled
+    assert not test.selectbox
     assert len(test.chat_message) == 0 and test.chat_input
     with Session(repository.engine) as session:
         assert session.scalar(select(func.count()).select_from(Booking)) == 1

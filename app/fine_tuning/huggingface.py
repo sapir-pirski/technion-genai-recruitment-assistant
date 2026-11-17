@@ -26,6 +26,9 @@ def write_json(path: Path, value):
 
 
 def train(settings, output: Path, *, epochs=5, seed=42, max_length=2048) -> dict:
+    # Reject a missing/invalid benchmark before downloading models or starting training.
+    conversations = load_conversations(settings)
+    examples = build_examples(conversations)
     # All download/cache writes stay inside the ignored project artifacts directory.
     os.environ.setdefault("HF_HOME", str(ROOT / "artifacts/huggingface"))
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -45,8 +48,6 @@ def train(settings, output: Path, *, epochs=5, seed=42, max_length=2048) -> dict
         BASE_MODEL, revision=BASE_REVISION, token=token, trust_remote_code=False
     )
     tokenizer.truncation_side = "left"
-    conversations = load_conversations(settings)
-    examples = build_examples(conversations)
     split_ids = {
         name: {row["conversation_id"] for row in examples if row["split"] == name}
         for name in ("train", "validation", "test")

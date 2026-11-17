@@ -99,6 +99,8 @@ class ChatService:
     ) -> TurnResult:
         if len(conversation_id) > 64 or not conversation_id:
             raise ValueError("Invalid conversation identifier.")
+        if job_id is not None and job_id != DEFAULT_JOB_ID:
+            raise ValueError("Only the assignment Python Developer role is supported.")
         if context_inputs is not None:
             context_inputs = ProfileInputs.model_validate(context_inputs)
             if text is None:
@@ -118,6 +120,10 @@ class ChatService:
             raise ValueError("reference_time must include a timezone.")
         with self._lock, self.conversations.lock(conversation_id):
             old = self.state(conversation_id)
+            if old.get("job_id", DEFAULT_JOB_ID) != DEFAULT_JOB_ID:
+                raise ValueError(
+                    "Start a new conversation for the assignment Python Developer role."
+                )
             job_id = job_id or old.get("job_id") or DEFAULT_JOB_ID
             if old and old.get("job_id", DEFAULT_JOB_ID) != job_id:
                 raise ValueError("Start a new conversation to change jobs")

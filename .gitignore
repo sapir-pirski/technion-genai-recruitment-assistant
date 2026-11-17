@@ -6,11 +6,9 @@ __pycache__/
 /.ruff_cache/
 .DS_Store
 
-# Generated benchmark files; data/jobs PDFs remain tracked
+# Private benchmark input and generated splits; the assignment PDF remains tracked
+/data/sms_conversations.json
 /data/processed/
 
-# Keep the scheduler log directory, but ignore generated contents
+# Generated artifacts and private backups
 /artifacts/*
-!/artifacts/ingestion/
-/artifacts/ingestion/*
-!/artifacts/ingestion/.gitkeep

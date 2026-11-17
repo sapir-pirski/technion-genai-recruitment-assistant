@@ -45,15 +45,13 @@ class Settings(BaseSettings):
     hf_exit_revision: str = Field(default_factory=local_exit_revision)
     hf_exit_local_path: Path = LOCAL_EXIT
     embedding_model: str = "text-embedding-3-small"
-    job_sources_path: Path = ROOT / "config/job_sources.json"
     job_manifest_path: Path = ROOT / "config/job_corpus_manifest.json"
     job_data_path: Path = ROOT / "data"
-    ingestion_report_path: Path = ROOT / "artifacts/ingestion"
     conversation_export_path: Path = ROOT / "artifacts/conversations.json"
     log_level: str = Field(default="INFO", pattern=r"^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
     dataset_version: str = "assignment-v1"
+    dataset_path: Path = ROOT / "data/sms_conversations.json"
     max_advisor_consultations: int = Field(default=3, ge=1, le=8)
-    corpus_limit: int = Field(default=10, ge=1, le=10000)
     chunk_size: int = Field(default=900, ge=200)
     chunk_overlap: int = Field(default=120, ge=0)
     pipeline_version: str = "jobs-v1"
@@ -127,7 +125,9 @@ class Settings(BaseSettings):
     @field_validator("database_url")
     @classmethod
     def postgres_only(cls, value):
-        if not value or make_url(value).get_backend_name() != "postgresql":
+        if not value:
+            return ""
+        if make_url(value).get_backend_name() != "postgresql":
             raise ValueError(
                 "Set DATABASE_URL to the PostgreSQL database used by the whole application"
             )
@@ -139,11 +139,18 @@ class Settings(BaseSettings):
 
     @property
     def postgres_dsn(self) -> str:
+        if not self.database_url:
+            raise ValueError("Set DATABASE_URL before running the database-backed application")
         return (
             make_url(self.database_url)
             .set(drivername="postgresql")
             .render_as_string(hide_password=False)
         )
+
+    @field_validator("dataset_path")
+    @classmethod
+    def absolute_dataset_path(cls, value):
+        return value if value.is_absolute() else ROOT / value
 
     @field_validator("model_temperature", "embedding_dimensions", mode="before")
     @classmethod

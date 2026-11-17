@@ -1,6 +1,5 @@
 import json
 import os
-import plistlib
 import subprocess
 import sys
 from pathlib import Path
@@ -13,25 +12,6 @@ from sqlalchemy.engine import URL
 from ops import launch_support as launcher
 
 ROOT = Path(__file__).resolve().parents[2]
-
-
-def test_native_schedule_keeps_cloud_credentials_out_of_plist(tmp_path):
-    output = tmp_path / "job-sync.plist"
-    subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "ops/install_schedule.py"),
-            "--output",
-            str(output),
-        ],
-        check=True,
-        capture_output=True,
-    )
-    config = plistlib.loads(output.read_bytes())
-    assert config["Label"] == "com.recruitment.job-sync"
-    assert config["ProgramArguments"] == ["/bin/bash", str(ROOT / "ops/run-job-sync.sh")]
-    assert config["StartCalendarInterval"] == {"Hour": 3, "Minute": 17}
-    assert "EnvironmentVariables" not in config
 
 
 def test_hosted_database_url_requires_tls_and_preserves_credentials():

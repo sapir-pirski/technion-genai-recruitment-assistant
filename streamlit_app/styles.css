@@ -57,7 +57,6 @@
   overflow-wrap: anywhere;
 }
 .st-key-role_header { margin-bottom: 0.25rem; }
-.st-key-role_title { align-items: flex-start; }
 .st-key-header_controls { align-items: flex-start; gap: 0.5rem; }
 .st-key-job_description_reader { width: 100%; max-width: 75ch; margin-inline: auto; }
 .st-key-job_description_reader .job-description :is(h2, h3, h4) {
@@ -152,21 +151,6 @@
 .candidate-upload-tooltip::before {
   content: ""; position: absolute; left: 0; right: 0; top: -8px; height: 8px;
 }
-.role-location {
-  display: flex; align-items: flex-start; gap: 6px;
-  color: var(--ui-muted); font-size: 0.875rem; line-height: 1.5;
-  margin: 0.25rem 0 0; overflow-wrap: anywhere;
-}
-.role-location svg {
-  flex: 0 0 16px; width: 16px; height: 16px; margin-top: 2px;
-}
-.company-icon {
-  display: flex; align-items: center; justify-content: center;
-  width: 48px; height: 48px; box-sizing: border-box;
-  border: 1px solid var(--ui-border); border-radius: 10px;
-  background: var(--ui-surface); overflow: hidden;
-}
-.company-icon img { width: 48px; height: 48px; object-fit: contain; }
 .job-description {
   color: var(--ui-text);
   line-height: 1.7;
@@ -258,13 +242,6 @@
   text-align: center;
 }
 @media (max-width: 640px) {
-  [data-testid="stSelectboxVirtualDropdown"] [role="listbox"][aria-label="Position"] [role="option"] {
-    height: auto; min-height: 44px;
-  }
-  [data-testid="stSelectboxVirtualDropdown"] [role="listbox"][aria-label="Position"] [data-item-hl] {
-    height: auto; min-height: 32px; padding-block: 0.375rem;
-    white-space: normal; overflow-wrap: anywhere;
-  }
   .st-key-role_header { align-items: flex-start; }
   .st-key-workspace .st-key-role_header,
   .st-key-workspace .st-key-appointment_choices,

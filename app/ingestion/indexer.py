@@ -1,17 +1,16 @@
 import json
-from pathlib import Path
 
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pypdf import PdfReader
 
 from app.ingestion.description import (
-    clean_markdown,
     pdf_markdown,
-    plain_markdown,
     presentation_for,
     validate_pdf_description,
 )
+from app.ingestion.files import resolve_pdf
+from app.ingestion.models import ASSIGNMENT_DOCUMENT_ID, DEFAULT_JOB_ID
 from app.ingestion.normalize import digest, normalized_text
 from app.observability.tracing import traced
 from app.rag.retriever import vectorstore
@@ -42,51 +41,22 @@ class DocumentIndexer:
             raise ValueError("CHUNK_OVERLAP must be smaller than CHUNK_SIZE")
 
     @traced("ingestion", "index_document")
-    def index(self, *, job_id, document_id, pdf_path, source_url="", job_snapshot=None):
-        pdf_path = Path(pdf_path).resolve()
-        if pdf_path.parent != self.settings.job_pdf_path.resolve():
-            raise ValueError("Place PDFs directly in the jobs folder before ingestion")
+    def index(self, *, job_id, document_id, pdf_path, source_url=""):
+        if job_id != DEFAULT_JOB_ID or document_id != ASSIGNMENT_DOCUMENT_ID:
+            raise ValueError("Only the assignment job description can be indexed")
+        pdf_path = resolve_pdf(self.settings, pdf_path)
         if pdf_path.stat().st_size > 25_000_000:
             raise ValueError("Document exceeds the 25 MB ingestion limit")
         pages = pdf_pages(pdf_path)
         pdf_data = pdf_path.read_bytes()
         pdf_hash = digest(pdf_data)
-        job = job_snapshot or self.registry.get_job(job_id)
-        if job_snapshot is not None:
-            markdown = (
-                clean_markdown(job["description_text"], job["title"])
-                if job.get("description_format") == "markdown"
-                else plain_markdown(job["description_text"], job["title"])
-            )
-            presentation = presentation_for(job, markdown)
-            validate_pdf_description(markdown, pages)
-        else:
-            presentation = self.registry.current_presentation(
-                document_id, self.settings.index_collection, pdf_hash
-            )
-            if presentation is None:
-                manifest = (
-                    json.loads(self.settings.job_manifest_path.read_text())
-                    if self.settings.job_manifest_path.is_file()
-                    else {"jobs": []}
-                )
-                saved = next(
-                    (
-                        record
-                        for record in manifest["jobs"]
-                        if record["document_id"] == document_id
-                        and record.get("pdf_sha256") == pdf_hash
-                        and record.get("description_format") == "markdown"
-                    ),
-                    None,
-                )
-                markdown = (
-                    saved["description_text"] if saved else pdf_markdown(pdf_path, job["title"])
-                )
-                presentation = presentation_for(
-                    job, markdown, notices=saved.get("description_notices", []) if saved else []
-                )
-                validate_pdf_description(markdown, pages)
+        job = self.registry.get_job(job_id)
+        presentation = self.registry.current_presentation(
+            document_id, self.settings.index_collection, pdf_hash
+        )
+        if presentation is None:
+            presentation = presentation_for(job, pdf_markdown(pdf_path, job["title"]))
+        validate_pdf_description(presentation["description_text"], pages)
         text_hash = digest("\n".join(text for _, text in pages))
         version_id = digest(f"{document_id}:{text_hash}:{self.settings.index_collection}")
         self.registry.save_document(job_id, document_id, pdf_path, source_url)
@@ -212,36 +182,3 @@ class DocumentIndexer:
             "source_hash": digest(pdf_path.read_bytes()),
             "version_id": version_id,
         }
-
-    def cleanup(self):
-        if self.lease_owner:
-            self.registry.renew_lease(self.lease_owner)
-        # The caller holds the catalog lease. Never remove a published version.
-        from sqlalchemy import select
-        from sqlalchemy.orm import Session
-
-        from app.ingestion.models import DocumentVersion, Job, JobDocument
-
-        with Session(self.registry.engine) as session:
-            active = set(
-                session.scalars(
-                    select(DocumentVersion.document_version_id)
-                    .join(JobDocument, DocumentVersion.document_id == JobDocument.document_id)
-                    .join(Job, JobDocument.job_id == Job.job_id)
-                    .where(
-                        DocumentVersion.collection_name == self.settings.index_collection,
-                        DocumentVersion.is_active.is_(True),
-                        JobDocument.enabled.is_(True),
-                        Job.status == "active",
-                    )
-                )
-            )
-        records = self.store.get(include=["metadatas"])
-        stale = [
-            key
-            for key, meta in zip(records["ids"], records["metadatas"], strict=True)
-            if meta.get("document_version_id") not in active
-        ]
-        for offset in range(0, len(stale), 500):
-            self.store.delete(ids=stale[offset : offset + 500])
-        return len(stale)

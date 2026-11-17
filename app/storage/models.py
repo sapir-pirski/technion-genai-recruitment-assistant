@@ -177,6 +177,8 @@ class TraceSpan(CatalogBase):
 
 
 class DatasetConversation(CatalogBase):
+    """Legacy benchmark rows, retained for existing-database compatibility only."""
+
     __tablename__ = "dataset_conversations"
     __table_args__ = (
         CheckConstraint("split IN ('train', 'validation', 'test')"),
@@ -193,6 +195,8 @@ class DatasetConversation(CatalogBase):
 
 
 class DatasetTurn(CatalogBase):
+    """Legacy labels; training and evaluation now read their local JSON input."""
+
     __tablename__ = "dataset_turns"
     __table_args__ = (
         ForeignKeyConstraint(

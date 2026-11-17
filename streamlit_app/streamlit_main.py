@@ -1,12 +1,8 @@
 import hashlib
-import html
 import logging
-import re
 import sys
-from base64 import b64encode
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlsplit
 from uuid import uuid4
 from zoneinfo import ZoneInfo, available_timezones
 
@@ -114,52 +110,6 @@ def initialize_timezone(settings, state):
     st.session_state.timezone = zone
 
 
-def employer(job):
-    return "" if job["job_id"] == DEFAULT_JOB_ID else job["company_name"]
-
-
-def location_label(job):
-    locations = []
-    seen = set()
-    for value in job.get("locations", []):
-        text = " ".join((value or "").split())
-        key = text.casefold().strip(" .")
-        if (
-            key not in {"", "unknown", "not specified", "unspecified", "n/a", "none", "null"}
-            and key not in seen
-        ):
-            locations.append(text)
-            seen.add(key)
-    location = " / ".join(locations)
-    mode = re.sub(r"[-_\s]", "", job.get("workplace_type") or "").casefold()
-    workplace = {"remote": "Remote", "hybrid": "Hybrid", "onsite": "On-site"}.get(mode)
-    pattern = "on[- ]?site" if mode == "onsite" else mode
-    if workplace and not re.search(rf"\b{pattern}\b", location, re.IGNORECASE):
-        location = " · ".join(filter(None, [location, workplace]))
-    return location
-
-
-def job_label(job):
-    return " · ".join(filter(None, [job["title"], employer(job), location_label(job)]))
-
-
-def public_url(value):
-    return value if value and urlsplit(value).scheme in {"https", "http"} else None
-
-
-def render_company_icon(job, logo):
-    if not logo or logo.get("mime_type") != "image/png" or not logo.get("data"):
-        return
-    name = employer(job) or job["title"]
-    data = b64encode(logo["data"]).decode("ascii")
-    content = (
-        f'<img src="data:image/png;base64,{data}" alt="{html.escape(name)} logo" '
-        'width="48" height="48">'
-    )
-    with st.container(width=48):
-        st.html(f'<div class="company-icon">{content}</div>')
-
-
 def job_downloads(service, settings, job):
     downloads = []
     for document in service.registry.documents(job["job_id"], collection=settings.index_collection):
@@ -181,61 +131,25 @@ def job_downloads(service, settings, job):
     return downloads
 
 
-def render_header(job, choices, locked, started, logo, downloads):
+def render_header(job, started, downloads):
     with st.container(key="role_header", horizontal=True, vertical_alignment="top"):
         with st.container():
-            with st.container(key="role_title", horizontal=True, vertical_alignment="top"):
-                render_company_icon(job, logo)
-                with st.container():
-                    st.title(job["title"], anchor=False)
-                    company, location = employer(job), location_label(job)
-                    if company or location:
-                        with st.container(gap="xxsmall"):
-                            if company:
-                                st.write(company)
-                            if location:
-                                icon = (
-                                    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
-                                    'width="16" height="16" aria-hidden="true" '
-                                    'fill="none" stroke="currentColor" stroke-width="1.75" '
-                                    'stroke-linecap="round" stroke-linejoin="round">'
-                                    '<path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"/>'
-                                    '<circle cx="12" cy="10" r="3"/></svg>'
-                                )
-                                st.html(
-                                    '<p class="role-location">'
-                                    f"{icon}"
-                                    f"<span>{html.escape(location)}</span></p>"
-                                )
+            st.title(job["title"], anchor=False)
         with st.container(width="content", horizontal=True, gap="small", key="header_controls"):
             render_page_actions(downloads)
-            with st.popover(
-                "Change role",
-                icon=":material/swap_horiz:",
-                disabled=locked,
-                help="Start a new conversation to change roles." if locked else None,
-            ):
-                st.selectbox(
-                    "Position",
-                    list(choices),
-                    format_func=lambda value: job_label(choices[value]),
-                    key="selected_job_id",
-                    label_visibility="collapsed",
-                    disabled=locked,
-                )
             if started:
                 with st.popover(
                     "New conversation",
                     icon=":material/add:",
                     disabled=bool(st.session_state.get("pending_request")),
                 ):
-                    st.write("Start a fresh conversation for this or another position.")
+                    st.write("Start a fresh conversation for the Python Developer position.")
                     st.caption("Your recorded messages and any confirmed interview stay saved.")
                     st.button("Start new conversation", on_click=reset_conversation)
     st.caption(
         "Interview booking available"
         if job["scheduling_enabled"]
-        else "Reference posting · Interview requests go through the employer"
+        else "Interview booking unavailable"
     )
 
 
@@ -254,8 +168,6 @@ def show_job_description(job):
             st.write(
                 "Read the published job description for responsibilities, skills and experience."
             )
-        if url := public_url(job["canonical_url"]):
-            st.link_button("View original employer posting", url, icon=":material/open_in_new:")
         for notice in job.get("description_notices", []):
             st.caption(notice)
         if st.button("Close description", key="close_description"):
@@ -312,8 +224,6 @@ def render_sources(source_ids, references, job, index):
             st.caption(f"{name} — {label}" if pages else name)
         if not groups or any(key not in references for key in source_ids):
             st.caption("Some earlier source details are unavailable. Read the current PDF above.")
-        if url := public_url(job["canonical_url"]):
-            st.link_button("Original employer posting", url, key=f"source_link_{index}")
 
 
 def render_messages(service, messages, job, busy, closed):
@@ -407,7 +317,7 @@ def render_appointments(result, job, busy):
         date, times, detail = slot_details(review)
         with st.container(border=True, key="appointment_review"):
             st.subheader("Review your interview", anchor=False)
-            st.write(job_label(job))
+            st.write(job["title"])
             st.write(f"**{date} · {times}**")
             st.caption(detail)
             st.caption("Your appointment is not booked until you confirm.")
@@ -447,7 +357,7 @@ def render_appointments(result, job, busy):
     st.caption("Choose a time to review it, or suggest another date in the conversation.")
 
 
-def process_pending(service, selected_job, messages):
+def process_pending(service, messages):
     pending = st.session_state.get("pending_request")
     if not pending:
         return
@@ -484,7 +394,7 @@ def process_pending(service, selected_job, messages):
                 service.turn(
                     st.session_state.conversation_id,
                     timezone=st.session_state.timezone,
-                    job_id=selected_job,
+                    job_id=DEFAULT_JOB_ID,
                     progress=report,
                     **pending,
                 )
@@ -546,10 +456,7 @@ def render():
         service = create_service(settings, identity)
         state = service.state(st.session_state.conversation_id)
         messages = service.conversations.messages(st.session_state.conversation_id)
-        jobs = sorted(
-            service.registry.list_jobs(collection=settings.index_collection),
-            key=lambda job: (job["job_id"] != DEFAULT_JOB_ID, job["company_name"], job["title"]),
-        )
+        job = service.registry.get_job(DEFAULT_JOB_ID, collection=settings.index_collection)
     except Exception as error:
         log_event(
             "service_initialization_failed",
@@ -559,37 +466,21 @@ def render():
         )
         st.error("The assistant is temporarily unavailable. Please try again shortly.")
         st.stop()
-    choices = {job["job_id"]: job for job in jobs}
-    if not choices:
-        st.info("No active positions are available. Please try again later.")
+    if not job or job["status"] != "active":
+        st.info("The Python Developer position is temporarily unavailable. Please try again later.")
         st.stop()
-    conversation_job = state.get("job_id")
-    if conversation_job and conversation_job not in choices:
-        st.info("This position is no longer active. Start a new conversation for another role.")
-        st.button("Choose another position", on_click=reset_conversation)
+    if state.get("job_id", DEFAULT_JOB_ID) != DEFAULT_JOB_ID:
+        st.info("Start a new conversation for the assignment Python Developer position.")
+        st.button("Start new conversation", on_click=reset_conversation)
         st.stop()
-    if conversation_job:
-        st.session_state.selected_job_id = conversation_job
-    elif st.session_state.get("selected_job_id") not in choices:
-        st.session_state.selected_job_id = next(iter(choices))
     initialize_timezone(settings, state)
-    selected_job = st.session_state.selected_job_id
-    job = service.registry.get_job(selected_job, collection=settings.index_collection)
-    logo = service.registry.company_logo(selected_job)
     downloads = job_downloads(service, settings, job)
     busy = bool(st.session_state.get("pending_request"))
     started = bool(state or messages)
     closed = state.get("conversation_status") == "closed" and not busy
     with st.container(horizontal=True, horizontal_alignment="center"):
         with st.container(width=960, key="workspace"):
-            render_header(
-                job,
-                choices,
-                locked=started or busy,
-                started=started,
-                logo=logo,
-                downloads=downloads,
-            )
+            render_header(job, started=started, downloads=downloads)
             render_job_details(job)
             st.divider()
             if not closed:
@@ -603,7 +494,7 @@ def render():
                 None,
             )
             render_ui_behaviors(st.session_state.conversation_id, latest_id)
-            process_pending(service, selected_job, messages)
+            process_pending(service, messages)
     if started:
         render_composer(closed, busy, started=True)
 
