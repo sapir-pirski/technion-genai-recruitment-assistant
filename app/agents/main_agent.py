@@ -201,14 +201,8 @@ def compose(state: dict) -> dict:
             if not scheduling_performed and not booking and state.get("scheduling_enabled", True):
                 parts.append("Would you like to arrange an interview?")
         if not parts:
-            conflicts = state.get("candidate_profile", {}).get("conflicts", [])
-            fields = {item["field"] for item in conflicts}
             question = (
-                "Your background contains different Python experience claims. Please state your current years of Python experience and explicitly correct the older claim."
-                if "python_experience" in fields
-                else "Your sources contain different names. Please state your correct name explicitly."
-                if "identity" in fields
-                else "Would you like to end the conversation, or continue arranging an interview?"
+                "Would you like to end the conversation, or continue arranging an interview?"
                 if state.get("exit_label") == "end"
                 else plan["next_question"]
             )

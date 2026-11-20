@@ -11,25 +11,22 @@ import psycopg
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from psycopg import sql
+from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from app.agents.backends.openai import OpenAIBackend
 from app.config import ROOT, Settings
-from app.ingestion.models import Job
-from app.ingestion.registry import JobRegistry, utcnow
+from app.rag.repository import JobDescriptionRepository
+from app.scheduling.models import Slot
+from app.scheduling.repository import ScheduleRepository
 from app.schemas import (
-    ChatProfileUpdate,
-    FollowupQuestions,
     InfoAnswer,
     InfoDecision,
     Plan,
-    ProfileSections,
 )
-from app.service import ChatService
 from app.storage.database import make_engine
-from app.storage.models import Slot
-from app.storage.schedule_repository import ScheduleRepository
+from app.workflow.service import ChatService
 
 
 class EmptyRetriever:
@@ -40,22 +37,17 @@ class EmptyRetriever:
 @pytest.fixture
 def legacy_job():
     """Simulate an existing imported posting without restoring collection features."""
-    registry = JobRegistry(Settings(_env_file=None))
+    registry = JobDescriptionRepository(Settings(_env_file=None))
     try:
-        with Session(registry.engine) as session, session.begin():
-            session.add(
-                Job(
-                    job_id="reference",
-                    source_id="local:assignment",
-                    external_job_id="legacy",
-                    canonical_url="https://example.com/legacy",
-                    company_name="Example",
-                    title="Legacy Python Role",
-                    description_text="Legacy-only salary USD 200000.",
-                    first_seen_at=utcnow(),
-                    last_seen_at=utcnow(),
-                    status="active",
-                    scheduling_enabled=False,
+        with registry.engine.begin() as connection:
+            connection.execute(
+                text(
+                    "CREATE TABLE public.jobs (job_id text PRIMARY KEY, status text, description_text text)"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO public.jobs VALUES ('reference', 'active', 'Legacy-only salary USD 200000.')"
                 )
             )
         return "reference"
@@ -109,11 +101,6 @@ def backend(calendar_request):
         next_question="What Python projects have you worked on?",
     )
     client.exit_label.return_value = "do_not_end"
-    client.extract_chat_profile.return_value = ChatProfileUpdate(
-        facts=ProfileSections(name=None, experience=[], skills=[], education=[], projects=[]),
-        superseded_fact_ids=[],
-        confirmed_fact_ids=[],
-    )
 
     def next_plan(state):
         base = client.plan.return_value
@@ -141,13 +128,6 @@ def backend(calendar_request):
     )
     client.info.return_value = InfoAnswer(
         answer="A recruiter can clarify that.", source_ids=[], supported=False
-    )
-    client.suggest_followups.return_value = FollowupQuestions(
-        questions=[
-            "What should I prepare for the interview?",
-            "What can you tell me about the team?",
-            "Which technologies would I use day to day?",
-        ]
     )
     return client
 
@@ -193,6 +173,8 @@ def database_factory():
 
 @pytest.fixture(autouse=True)
 def isolated_storage(request, monkeypatch, tmp_path):
+    # Behavior tests use explicit mock baselines; model artifacts are tested separately.
+    monkeypatch.setenv("EXIT_PROVIDER", "openai")
     # Pure input/dataset checks do not need a running database or copied PDFs.
     if request.node.path.parent.name != "integration":
         return
@@ -200,7 +182,7 @@ def isolated_storage(request, monkeypatch, tmp_path):
     monkeypatch.setenv("DATABASE_URL", database_factory())
     monkeypatch.setenv("OPENAI_API_KEY", "test-only-key")
     backend = request.getfixturevalue("backend")
-    monkeypatch.setattr("app.service.OpenAIBackend", lambda settings: backend)
+    monkeypatch.setattr("app.workflow.service.OpenAIBackend", lambda settings: backend)
     monkeypatch.setattr("app.evaluation.runner.OpenAIBackend", lambda settings: backend)
     embeddings = Mock(spec=["embed_documents", "embed_query"])
     vector = [1.0] + [0.0] * 511

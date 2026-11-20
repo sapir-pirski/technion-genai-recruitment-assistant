@@ -1,0 +1,84 @@
+{
+  "base_model": "answerdotai/ModernBERT-base",
+  "base_revision": "8949b909ec900327062f0ebf497f51aef5e6f0c8",
+  "created_at": "2026-11-07T20:44:59.751520+00:00",
+  "dataset_version": "assignment-v1",
+  "dataset_sha256": "94e925f72a43958a90743e477051ae0d053bfb63a11b3f07ffcb4b4126389830",
+  "split_conversations": {
+    "train": 9,
+    "validation": 3,
+    "test": 3
+  },
+  "training_examples": 36,
+  "validation_examples": 12,
+  "test_used_for_selection": false,
+  "selected_epoch": 4,
+  "selection_metric": "validation macro F1; validation loss breaks ties",
+  "seed": 42,
+  "history": [
+    {
+      "epoch": 1,
+      "training_loss": 0.8583776983949873,
+      "validation_loss": 0.35423604647318524,
+      "validation_accuracy": 0.8333333333333334,
+      "validation_macro_f1": 0.8125,
+      "selected": true
+    },
+    {
+      "epoch": 2,
+      "training_loss": 0.9680500196086036,
+      "validation_loss": 0.5006759986281395,
+      "validation_accuracy": 0.75,
+      "validation_macro_f1": 0.7333333333333334,
+      "selected": false
+    },
+    {
+      "epoch": 3,
+      "training_loss": 0.3577885706391599,
+      "validation_loss": 0.41138098513086635,
+      "validation_accuracy": 0.8333333333333334,
+      "validation_macro_f1": 0.7,
+      "selected": false
+    },
+    {
+      "epoch": 4,
+      "training_loss": 0.22917976655056313,
+      "validation_loss": 0.18612541258335114,
+      "validation_accuracy": 0.9166666666666666,
+      "validation_macro_f1": 0.8991596638655461,
+      "selected": true
+    },
+    {
+      "epoch": 5,
+      "training_loss": 0.15058725813064988,
+      "validation_loss": 0.299343508707049,
+      "validation_accuracy": 0.9166666666666666,
+      "validation_macro_f1": 0.8736842105263158,
+      "selected": false
+    }
+  ],
+  "artifact_manifest": {
+    "format_version": 1,
+    "base_model": "answerdotai/ModernBERT-base",
+    "base_revision": "8949b909ec900327062f0ebf497f51aef5e6f0c8",
+    "input_format": "exit-history-json-v1: role/content JSON; last 12 messages; 16000 chars; redact phones/emails/credentials; left token truncation",
+    "input_sha256": "6e545fb1765afc19bb02cb66cd9649f5b9f5a90b1271c33b707e2cb15b8fd712",
+    "labels": [
+      "do_not_end",
+      "end"
+    ],
+    "max_length": 2048,
+    "selected_epoch": 4,
+    "dataset_sha256": "94e925f72a43958a90743e477051ae0d053bfb63a11b3f07ffcb4b4126389830",
+    "quantization": "dynamic-int8-per-channel; embeddings retained as float32",
+    "validation_export_agreement": 12,
+    "validation_examples": 12,
+    "max_validation_logit_difference": 1.306992530822754,
+    "files": {
+      "tokenizer_config.json": "7e2238ee188020b334e86820c46fa5c9e55b4bc4b7c4fd5f58956198450e2096",
+      "special_tokens_map.json": "ea97ecdbcc73713039d8d64dbb05e3689495c96657fbd9a18f5bed381be81049",
+      "tokenizer.json": "dc3a6f68573bc21a9bb27017b11a158855edde18ebd632bf10158f5c7388b5de",
+      "model.onnx": "8bfb0c30560f6069412ff19210678ce1ca6f5c8b08b5db3fb92375c9ff631582"
+    }
+  }
+}

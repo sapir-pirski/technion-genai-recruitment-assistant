@@ -1,7 +1,6 @@
 from langchain_openai import OpenAIEmbeddings
 
-from app.config import Settings
-from app.ingestion.models import ASSIGNMENT_DOCUMENT_ID, DEFAULT_JOB_ID
+from app.config import ASSIGNMENT_DOCUMENT_ID, DEFAULT_JOB_ID, Settings
 from app.observability.tracing import EmbeddingClient
 from app.rag.store import PostgresVectorStore
 
@@ -22,10 +21,10 @@ def vectorstore(settings: Settings, *, engine=None) -> PostgresVectorStore:
 
 class JobRetriever:
     def __init__(self, settings: Settings):
-        from app.ingestion.registry import JobRegistry
+        from app.rag.repository import JobDescriptionRepository
 
         self.settings = settings
-        self.registry = JobRegistry(settings)
+        self.registry = JobDescriptionRepository(settings)
         self.store = vectorstore(settings, engine=self.registry.engine)
 
     def search(self, query: str, job_id=None) -> list[dict]:

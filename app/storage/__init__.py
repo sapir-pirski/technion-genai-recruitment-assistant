@@ -1,1 +1,1 @@
-"""Database access and booking integrity."""
+"""Shared database setup, conversation persistence and legacy-data copying."""

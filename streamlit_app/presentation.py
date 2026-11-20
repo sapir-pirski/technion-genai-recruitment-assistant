@@ -18,3 +18,10 @@ def response_text(content, result, *, cards=False):
             f"Your interview is confirmed for {booking['slot']['label']}.", "", 1
         )
     return "\n\n".join(part.strip() for part in content.split("\n\n") if part.strip())
+
+
+STARTER_QUESTIONS = (
+    "What skills are required for this role?",
+    "What are the main responsibilities?",
+    "How can I arrange an interview?",
+)

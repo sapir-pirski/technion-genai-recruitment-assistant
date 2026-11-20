@@ -4,18 +4,13 @@ from unittest.mock import patch
 import pytest
 from langgraph.checkpoint.postgres import PostgresSaver
 from reportlab.pdfgen import canvas
-from sqlalchemy import delete, inspect, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import delete, inspect, select, text
 from sqlalchemy.orm import Session
 
-from app.config import Settings
-from app.ingestion.files import ORIGINAL_PDF_NAME
-from app.ingestion.indexer import DocumentIndexer
-from app.ingestion.models import ASSIGNMENT_DOCUMENT_ID, DEFAULT_JOB_ID, DocumentVersion, Job
-from app.ingestion.operations import operate, startup_index_ready
-from app.ingestion.registry import JobRegistry
-from app.rag.ingest import ingest_pdf
-from app.rag.models import RagChunk
+from app.config import ASSIGNMENT_DOCUMENT_ID, DEFAULT_JOB_ID, ORIGINAL_PDF_NAME, Settings
+from app.rag.ingest import DocumentIndexer, ingest_pdf, operate, startup_index_ready
+from app.rag.models import JobDescription, RagChunk
+from app.rag.repository import JobDescriptionRepository
 from app.rag.retriever import JobRetriever
 
 
@@ -81,7 +76,12 @@ def test_extra_pdfs_and_legacy_jobs_are_ignored_without_deleting_stored_data(set
         assert matches and all("200000" not in match["text"] for match in matches)
         operate(settings, "bootstrap")
         with Session(registry.engine) as session:
-            assert session.get(Job, legacy_job).status == "active"
+            assert (
+                session.execute(
+                    text("SELECT status FROM public.jobs WHERE job_id = :job"), {"job": legacy_job}
+                ).scalar_one()
+                == "active"
+            )
             assert session.get(RagChunk, (settings.index_collection, "legacy-chunk")) is not None
         assert extra.read_bytes().startswith(b"Not a PDF")
     finally:
@@ -89,7 +89,7 @@ def test_extra_pdfs_and_legacy_jobs_are_ignored_without_deleting_stored_data(set
 
 
 def test_partial_update_preserves_previous_pdf_and_retry_repairs(settings, monkeypatch):
-    registry = JobRegistry(settings)
+    registry = JobDescriptionRepository(settings)
     retriever = JobRetriever(settings)
     try:
         path = rewrite_assignment(settings, "Original Python requirements include SQL and APIs.")
@@ -146,7 +146,7 @@ def test_configuration_change_requires_separate_index(settings):
     first = ingest_pdf(path, settings)
     changed = settings.model_copy(update={"chunk_size": 500, "chunk_overlap": 50})
     second = ingest_pdf(path, changed)
-    registry = JobRegistry(settings)
+    registry = JobDescriptionRepository(settings)
     try:
         assert settings.index_collection != changed.index_collection
         assert first["version_id"] != second["version_id"]
@@ -154,7 +154,7 @@ def test_configuration_change_requires_separate_index(settings):
             first["version_id"]
         ]
         with Session(registry.engine) as session:
-            assert session.get(DocumentVersion, second["version_id"]).embedding_dimensions == 512
+            assert session.get(JobDescription, changed.index_collection).embedding_dimensions == 512
     finally:
         registry.close()
 
@@ -162,7 +162,7 @@ def test_configuration_change_requires_separate_index(settings):
 def test_startup_reuses_ready_index_without_manifest_and_repairs_missing_chunk(settings):
     operate(settings, "bootstrap", if_needed=True)
     settings.job_manifest_path.unlink()
-    registry = JobRegistry(settings)
+    registry = JobDescriptionRepository(settings)
     try:
         assert startup_index_ready(settings, registry)
         with patch("app.rag.ingest.ingest_pdf", side_effect=AssertionError("No ingestion needed")):
@@ -182,16 +182,16 @@ def test_startup_reuses_ready_index_without_manifest_and_repairs_missing_chunk(s
         registry.close()
 
 
-def test_lease_prevents_overlap_and_releases_on_failure(settings):
-    registry = JobRegistry(settings)
+def test_advisory_lock_prevents_overlap_and_releases_on_failure(settings):
+    registry = JobDescriptionRepository(settings)
     try:
-        with registry.lease():
+        with registry.index_lock():
             with pytest.raises(ValueError, match="Another ingestion"):
-                with registry.lease():
+                with registry.index_lock():
                     pass
-        with pytest.raises(RuntimeError), registry.lease():
+        with pytest.raises(RuntimeError), registry.index_lock():
             raise RuntimeError("injected failure")
-        with registry.lease():
+        with registry.index_lock():
             pass
     finally:
         registry.close()
@@ -199,65 +199,49 @@ def test_lease_prevents_overlap_and_releases_on_failure(settings):
 
 @pytest.fixture
 def registry():
-    registry = JobRegistry(Settings(_env_file=None))
+    registry = JobDescriptionRepository(Settings(_env_file=None))
     yield registry
     registry.close()
 
 
-def stage(registry, version_id, *, document_id="document", collection="test"):
-    registry.save_document(DEFAULT_JOB_ID, document_id, "example.pdf")
-    registry.stage(
-        {
-            "document_version_id": version_id,
-            "document_id": document_id,
-            "pdf_path": "example.pdf",
-            "pdf_sha256": "a" * 64,
-            "text_sha256": version_id,
-            "pipeline_version": "test",
-            "embedding_model": "test",
-            "collection_name": collection,
-            "expected_chunk_count": 2,
-            "status": "staging",
-        }
-    )
-
-
-def test_fresh_database_has_22_tables_including_langgraph(registry):
-    with PostgresSaver.from_conn_string(Settings(_env_file=None).postgres_dsn) as saver:
+def test_fresh_database_has_eleven_core_and_langgraph_tables(registry):
+    settings = Settings(_env_file=None)
+    with PostgresSaver.from_conn_string(settings.postgres_dsn) as saver:
         saver.setup()
-    tables = set(inspect(registry.engine).get_table_names())
-    assert len(tables) == 22
-    assert {
+    tables = set(inspect(registry.engine).get_table_names(schema=settings.database_schema))
+    assert tables == {
+        "interview_slots",
+        "interview_bookings",
+        "conversations",
+        "conversation_messages",
+        "job_descriptions",
+        "rag_collections",
+        "rag_chunks",
         "checkpoints",
         "checkpoint_blobs",
         "checkpoint_writes",
         "checkpoint_migrations",
-    } <= tables
-    assert {"job_locations", "ingestion_items", "document_indexes"}.isdisjoint(tables)
+    }
+    assert inspect(registry.engine).get_table_names(schema="public") == []
 
 
-def test_database_enforces_complete_and_unique_active_versions(registry):
-    stage(registry, "old")
-    registry.publish("document", "test", "old", 2, 512)
-    stage(registry, "new")
-    with pytest.raises(IntegrityError), Session(registry.engine) as session, session.begin():
-        session.execute(
-            update(DocumentVersion)
-            .where(DocumentVersion.document_version_id == "new")
-            .values(is_active=True)
-        )
-    stage(registry, "other-collection", collection="other")
-    registry.publish("document", "other", "other-collection", 2, 512)
-    registry.publish("document", "test", "new", 2, 512)
-    with pytest.raises(IntegrityError), Session(registry.engine) as session, session.begin():
-        session.execute(
-            update(DocumentVersion)
-            .where(DocumentVersion.document_version_id == "old")
-            .values(is_active=True)
-        )
-    with Session(registry.engine) as session:
-        assert set(
-            session.scalars(
-                select(DocumentVersion.document_version_id).where(DocumentVersion.is_active)
-            )
-        ) == {"new", "other-collection"}
+def test_publication_rejects_missing_chunks_and_keeps_previous_pdf(registry):
+    settings = Settings(_env_file=None)
+    original = ingest_pdf(settings.job_pdf_path / ORIGINAL_PDF_NAME, settings)
+    values = {
+        "collection_name": settings.index_collection,
+        "document_version_id": "missing-version",
+        "pdf_path": "missing.pdf",
+        "source_url": "",
+        "pdf_sha256": "a" * 64,
+        "pdf_data": b"missing",
+        "presentation": {"description_text": "Unpublished change"},
+        "chunk_count": 1,
+        "embedding_dimensions": 512,
+    }
+    with pytest.raises(ValueError, match="Incomplete document index"):
+        registry.publish(values)
+    assert (
+        registry.current_version(ASSIGNMENT_DOCUMENT_ID, settings.index_collection)
+        == original["version_id"]
+    )

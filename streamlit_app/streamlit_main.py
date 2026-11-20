@@ -13,23 +13,13 @@ if str(ROOT) not in sys.path:
 
 import streamlit as st
 
-from app.config import Settings
-from app.ingestion.description import description_html
-from app.ingestion.models import DEFAULT_JOB_ID
+from app.config import DEFAULT_JOB_ID, Settings
 from app.observability.logging import log_event
-from app.service import ChatService
-from app.suggestions import STARTER_QUESTIONS
-from streamlit_app.introduction import (
-    clear_introduction_inputs,
-    context_snapshot,
-    render_introduction,
-    render_profile_status,
-)
-from streamlit_app.page_actions import render_page_actions
-from streamlit_app.presentation import response_text
-from streamlit_app.ui_behaviors import render_ui_behaviors
+from app.rag.description import description_html
+from app.workflow.service import ChatService
+from streamlit_app.presentation import STARTER_QUESTIONS, response_text
 
-st.set_page_config(page_title="Recruitment assistant", page_icon=":material/forum:", layout="wide")
+st.set_page_config(page_title="Recruitment assistant", page_icon=":material/forum:")
 
 
 def load_settings():
@@ -57,7 +47,6 @@ def queue_request(**request):
     if not st.session_state.get("pending_request"):
         st.session_state.pending_request = {
             "request_id": str(uuid4()),
-            "context_inputs": context_snapshot(),
             **request,
         }
         st.session_state.attempt_request = True
@@ -83,7 +72,6 @@ def reset_conversation():
         "pending_answer",
     ):
         st.session_state.pop(key, None)
-    clear_introduction_inputs()
 
 
 def select_slot(slot_id):
@@ -131,12 +119,11 @@ def job_downloads(service, settings, job):
     return downloads
 
 
-def render_header(job, started, downloads):
+def render_header(job, started):
     with st.container(key="role_header", horizontal=True, vertical_alignment="top"):
         with st.container():
             st.title(job["title"], anchor=False)
         with st.container(width="content", horizontal=True, gap="small", key="header_controls"):
-            render_page_actions(downloads)
             if started:
                 with st.popover(
                     "New conversation",
@@ -154,7 +141,7 @@ def render_header(job, started, downloads):
 
 
 @st.dialog("Job description", width="large", on_dismiss="rerun")
-def show_job_description(job):
+def show_job_description(job, downloads):
     with st.container(key="job_description_reader"):
         st.subheader(job["title"], anchor=False)
         description = job.get("description_text", "").strip()
@@ -170,32 +157,35 @@ def show_job_description(job):
             )
         for notice in job.get("description_notices", []):
             st.caption(notice)
+        for index, document in enumerate(downloads):
+            st.download_button(
+                "Download job description (PDF)",
+                data=document["data"] or b"",
+                file_name=document["filename"],
+                mime="application/pdf",
+                key=f"job_pdf_{index}",
+                disabled=document["data"] is None,
+                on_click="ignore",
+            )
         if st.button("Close description", key="close_description"):
             st.rerun()
 
 
-def render_job_details(job):
+def render_job_details(job, downloads):
     if st.button("About this role", key="job_details", icon=":material/work_outline:"):
-        show_job_description(job)
+        show_job_description(job, downloads)
 
 
-def render_suggestions(questions, busy, answer_request_id=None):
-    if busy or not questions:
-        return
+def render_starters(busy):
     with st.container(horizontal=True, key="suggestions"):
-        for question in questions:
+        for index, question in enumerate(STARTER_QUESTIONS):
             st.button(
-                question["text"],
-                key=f"suggestion_{answer_request_id or 'starter'}_{question['id']}",
+                question,
+                key=f"starter_{index}",
                 width="stretch",
+                disabled=busy,
                 on_click=queue_request,
-                kwargs={
-                    "text": question["text"],
-                    "suggestion": {
-                        "suggestion_id": question["id"],
-                        "answer_request_id": answer_request_id,
-                    },
-                },
+                kwargs={"text": question},
             )
 
 
@@ -268,12 +258,6 @@ def render_messages(service, messages, job, busy, closed):
                 if cards and not result.get("booking"):
                     render_appointments(result, job, busy or closed)
                 render_sources(message["result"].get("source_ids", []), references, job, index)
-                if not closed and latest:
-                    render_suggestions(
-                        message["result"].get("suggested_questions", []),
-                        busy,
-                        message["request_id"],
-                    )
     pending = st.session_state.get("pending_request")
     if pending and not any(row["request_id"] == pending["request_id"] for row in messages):
         text = pending.get("text")
@@ -361,6 +345,12 @@ def process_pending(service, messages):
     pending = st.session_state.get("pending_request")
     if not pending:
         return
+    # A browser session may retain inputs from the retired intake/suggestion controls.
+    pending = {
+        key: value
+        for key, value in pending.items()
+        if key in {"text", "request_id", "selected_slot_id"}
+    }
     attempt = st.session_state.pop("attempt_request", False)
     saved = any(
         row["role"] == "assistant" and row["request_id"] == pending["request_id"]
@@ -376,8 +366,6 @@ def process_pending(service, messages):
             status = (
                 "Confirming your interview…"
                 if pending.get("selected_slot_id")
-                else "Reading your background and preparing a reply…"
-                if any(pending.get("context_inputs", {}).values())
                 else "Preparing a reply…"
             )
             try:
@@ -416,27 +404,6 @@ def process_pending(service, messages):
             if pending.get("selected_slot_id"):
                 st.caption("Retry checks the same request, so it will not book twice.")
             st.button("Retry request", on_click=retry_request, type="primary")
-
-
-def render_composer(closed, busy, started):
-    target = st.bottom if started else st
-    with target.container(horizontal=True, horizontal_alignment="center"):
-        with st.container(width=960, key="composer"):
-            if closed:
-                st.caption("This conversation is complete. Use New conversation to start again.")
-            else:
-                if not started:
-                    render_suggestions(
-                        [question.model_dump() for question in STARTER_QUESTIONS], busy
-                    )
-                st.chat_input(
-                    "Message the assistant…",
-                    key="candidate_message",
-                    max_chars=4000,
-                    disabled=busy,
-                    submit_mode="disable",
-                    on_submit=submit_message,
-                )
 
 
 def render():
@@ -478,25 +445,26 @@ def render():
     busy = bool(st.session_state.get("pending_request"))
     started = bool(state or messages)
     closed = state.get("conversation_status") == "closed" and not busy
-    with st.container(horizontal=True, horizontal_alignment="center"):
-        with st.container(width=960, key="workspace"):
-            render_header(job, started=started, downloads=downloads)
-            render_job_details(job)
-            st.divider()
-            if not closed:
-                render_introduction(busy, state.get("candidate_profile", {}))
-            render_profile_status(state)
-            render_messages(service, messages, job, busy, closed)
-            if not started:
-                render_composer(closed, busy, started=False)
-            latest_id = next(
-                (row["request_id"] for row in reversed(messages) if row["role"] == "assistant"),
-                None,
-            )
-            render_ui_behaviors(st.session_state.conversation_id, latest_id)
-            process_pending(service, messages)
-    if started:
-        render_composer(closed, busy, started=True)
+    with st.container(key="workspace"):
+        render_header(job, started=started)
+        render_job_details(job, downloads)
+        st.divider()
+        if not started:
+            st.caption("Share your Python experience or ask about the role to get started.")
+            render_starters(busy)
+        render_messages(service, messages, job, busy, closed)
+        process_pending(service, messages)
+        if closed:
+            st.caption("This conversation is complete. Use New conversation to start again.")
+    if not closed:
+        st.chat_input(
+            "Message the assistant…",
+            key="candidate_message",
+            max_chars=4000,
+            disabled=busy,
+            submit_mode="disable",
+            on_submit=submit_message,
+        )
 
 
 render()

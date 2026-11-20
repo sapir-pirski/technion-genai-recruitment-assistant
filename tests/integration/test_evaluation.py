@@ -12,9 +12,10 @@ from app.agents.backends.common import prompt_manifest
 from app.agents.backends.openai import OpenAIBackend
 from app.config import Settings
 from app.evaluation.judge import evaluate_quality
+from app.evaluation.replay import evaluate_workflows
 from app.evaluation.runner import evaluate
-from app.evaluation.workflow import evaluate_workflows
-from app.storage.models import Booking, Conversation, ConversationMessage, TraceSpan
+from app.scheduling.models import Booking
+from app.storage.models import Conversation
 
 
 @pytest.mark.parametrize("task", ["actions", "exit"])
@@ -55,8 +56,8 @@ def test_evaluation_uses_stored_splits_and_preserves_benchmark(benchmark_dataset
 def test_stateful_workflow_replay_preserves_public_calendar_and_excludes_expectations(
     repository, backend, tmp_path
 ):
+    from app.scheduling.models import Slot
     from app.schemas import Plan
-    from app.storage.models import Slot
 
     with Session(repository.engine) as session:
         before = session.scalar(select(func.count()).select_from(Slot))
@@ -133,8 +134,8 @@ def judgment():
     }
 
 
-def test_quality_http_contract_report_trace_and_no_conversation_writes(tmp_path, capfd):
-    settings = Settings()
+def test_quality_http_contract_and_usage_need_no_database(tmp_path, capfd):
+    settings = Settings(database_url="")
     source, destination = tmp_path / "cases.json", tmp_path / "quality.json"
     source.write_text(json.dumps([packet()]))
     requests = []
@@ -194,26 +195,14 @@ def test_quality_http_contract_report_trace_and_no_conversation_writes(tmp_path,
         "Private answer text" not in destination.read_text()
         and "Private source text" not in destination.read_text()
     )
-    from app.storage.database import make_engine
-
-    engine = make_engine(settings.database_url)
-    try:
-        with Session(engine) as session:
-            spans = list(session.scalars(select(TraceSpan)))
-            model = next(row for row in spans if row.component == "llm")
-            assert model.attributes["prompt_sha256"] == report["judge_prompt"]["prompt_sha256"]
-            assert (model.input_tokens, model.output_tokens) == (100, 220)
-            assert all(row.conversation_id is None for row in spans)
-            assert session.scalar(select(func.count()).select_from(ConversationMessage)) == 0
-            assert session.scalar(select(func.count()).select_from(Booking)) == 0
-            assert "Private" not in json.dumps([row.attributes for row in spans])
-    finally:
-        engine.dispose()
+    # Quality grading uses only its explicit packets and in-memory usage accounting.
+    assert report["rows"][0]["usage"]["input_tokens"] == 100
+    assert report["rows"][0]["usage"]["output_tokens"] == 220
     assert "Private" not in capfd.readouterr().err
 
 
 def test_failed_judge_stays_unscored_and_next_case_continues(tmp_path):
-    settings = Settings()
+    settings = Settings(database_url="")
     source = tmp_path / "cases.json"
     source.write_text(json.dumps([packet("one"), packet("two")]))
     backend = Mock(

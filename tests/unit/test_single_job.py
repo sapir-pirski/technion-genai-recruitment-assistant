@@ -3,10 +3,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from app.ingestion.files import ORIGINAL_PDF_NAME, resolve_pdf
-from app.ingestion.models import ASSIGNMENT_DOCUMENT_ID, DEFAULT_JOB_ID
+from app.config import ASSIGNMENT_DOCUMENT_ID, DEFAULT_JOB_ID, ORIGINAL_PDF_NAME
 from app.main import main
-from app.rag.ingest import ingest_pdf
+from app.rag.ingest import ingest_pdf, resolve_pdf
 from app.rag.retriever import JobRetriever
 
 

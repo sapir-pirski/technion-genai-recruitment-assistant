@@ -7,12 +7,8 @@ from datetime import UTC, datetime
 from functools import wraps
 from uuid import uuid4
 
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
-
 from app.observability.logging import correlation, log_event
 from app.observability.pricing import estimate_cost
-from app.storage.models import TraceSpan
 
 _context = ContextVar("execution_trace", default=None)
 
@@ -26,6 +22,10 @@ class Span:
     component: str
     operation: str
     model: str | None = None
+    trace_id: str | None = None
+    parent_span_id: str | None = None
+    conversation_id: str | None = None
+    request_id: str | None = None
     span_id: str = field(default_factory=lambda: str(uuid4()))
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     finished_at: datetime | None = None
@@ -109,6 +109,8 @@ def span(component, operation, *, model=None, attributes=None):
     token = log_token = None
     if current is not None:
         trace_id, conversation_id, request_id, parent_id, rows, recorder = current
+        item.trace_id, item.parent_span_id = trace_id, parent_id
+        item.conversation_id, item.request_id = conversation_id, request_id
         rows.append((item, parent_id))
         token = _context.set((trace_id, conversation_id, request_id, item.span_id, rows, recorder))
         log_token = correlation.set(
@@ -119,7 +121,6 @@ def span(component, operation, *, model=None, attributes=None):
                 "request_id": request_id,
             }
         )
-        recorder.save(trace_id, conversation_id, request_id, [(item, parent_id)])
     try:
         yield item
     except Exception as error:
@@ -131,22 +132,22 @@ def span(component, operation, *, model=None, attributes=None):
         if item.status == "running":
             item.status = "complete"
         if current is not None:
-            recorder.save(trace_id, conversation_id, request_id, [(item, parent_id)])
-        log_event(
-            "span_failed" if item.status == "failed" else "span_completed",
-            level=logging.WARNING if item.status == "failed" else logging.DEBUG,
-            component=f"app.{component}",
-            duration_ms=round(item.duration_ms, 3),
-            error_code=item.error_code,
-        )
+            log_event(
+                "span_failed" if item.status == "failed" else "span_completed",
+                level=logging.WARNING if item.status == "failed" else logging.DEBUG,
+                component=f"app.{component}",
+                duration_ms=round(item.duration_ms, 3),
+                error_code=item.error_code,
+            )
         if token is not None:
             _context.reset(token)
             correlation.reset(log_token)
 
 
 class TraceRecorder:
-    def __init__(self, engine):
-        self.engine = engine
+    def __init__(self):
+        # Only the most recent request is retained, for local usage summaries.
+        self.last_trace = []
 
     @contextmanager
     def trace(
@@ -166,71 +167,8 @@ class TraceRecorder:
                 log_event("trace_started", component="app.observability")
                 yield root
         finally:
-            try:
-                if self.save(trace_id, conversation_id, request_id, rows):
-                    log_event(
-                        "trace_saved",
-                        component="app.observability",
-                        trace_id=trace_id,
-                        conversation_id=conversation_id,
-                        request_id=request_id,
-                    )
-            finally:
-                _context.reset(token)
-
-    def save(self, trace_id, conversation_id, request_id, rows):
-        try:
-            values = [
-                dict(
-                    trace_id=trace_id,
-                    conversation_id=conversation_id,
-                    request_id=request_id,
-                    parent_span_id=parent_id,
-                    **{
-                        key: getattr(item, key)
-                        for key in (
-                            "span_id",
-                            "component",
-                            "operation",
-                            "started_at",
-                            "finished_at",
-                            "duration_ms",
-                            "status",
-                            "model",
-                            "input_tokens",
-                            "output_tokens",
-                            "cached_input_tokens",
-                            "error_code",
-                            "attributes",
-                        )
-                    },
-                )
-                for item, parent_id in rows
-            ]
-            statement = insert(TraceSpan).values(values)
-            statement = statement.on_conflict_do_update(
-                index_elements=["span_id"],
-                set_={
-                    column.name: statement.excluded[column.name]
-                    for column in TraceSpan.__table__.columns
-                    if column.name != "span_id"
-                },
-            )
-            with Session(self.engine) as session, session.begin():
-                session.execute(statement)
-            return True
-        except Exception as error:
-            # Diagnostics must not cause another model call or undo a booking.
-            log_event(
-                "trace_persistence_failed",
-                level=logging.ERROR,
-                component="app.observability",
-                trace_id=trace_id,
-                conversation_id=conversation_id,
-                request_id=request_id,
-                error_code=type(error).__name__,
-            )
-            return False
+            self.last_trace = [item for item, _ in rows]
+            _context.reset(token)
 
 
 def traced(component, operation):

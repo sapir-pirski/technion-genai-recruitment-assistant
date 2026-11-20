@@ -3,13 +3,13 @@ from datetime import timedelta
 from unittest.mock import Mock
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from app.config import Settings
+from app.scheduling.models import Slot
 from app.schemas import InfoAnswer, InfoDecision
-from app.service import ChatService
-from app.storage.models import Slot, TraceSpan
+from app.workflow.service import ChatService
 
 
 def plan_turn(service, **changes):
@@ -166,17 +166,16 @@ def test_unavailable_preferences_offer_labelled_alternatives_and_trace_ids(
     assert len(reply.offered_slots) == 3 and not reply.booking
     assert "No appointments match" in reply.response and "alternatives" in reply.response
     assert service.state("alternatives")["schedule"]["status"] == "alternatives"
-    with Session(service.registry.engine) as session:
-        spans = list(session.scalars(select(TraceSpan).where(TraceSpan.component == "calendar")))
-        searches = [item for item in spans if item.operation == "search"]
-        assert {item.attributes["search_kind"] for item in searches} == {"matching", "alternatives"}
-        alternative = next(
-            item for item in searches if item.attributes["search_kind"] == "alternatives"
-        )
-        assert alternative.attributes["offered_slot_ids"] == [
-            slot["id"] for slot in reply.offered_slots
-        ]
-        assert private not in json.dumps([item.attributes for item in spans])
+    spans = [item for item in service.traces.last_trace if item.component == "calendar"]
+    searches = [item for item in spans if item.operation == "search"]
+    assert {item.attributes["search_kind"] for item in searches} == {"matching", "alternatives"}
+    alternative = next(
+        item for item in searches if item.attributes["search_kind"] == "alternatives"
+    )
+    assert alternative.attributes["offered_slot_ids"] == [
+        slot["id"] for slot in reply.offered_slots
+    ]
+    assert private not in json.dumps([item.attributes for item in spans])
 
 
 def test_booking_conflict_refreshes_alternatives_then_requires_new_confirmation(service, now):

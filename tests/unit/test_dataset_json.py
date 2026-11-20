@@ -8,7 +8,7 @@ import pytest
 from pydantic import SecretStr
 
 from app.config import Settings
-from app.evaluation.dataset import (
+from app.dataset import (
     SPLIT_NAMES,
     dataset_fingerprint,
     load_conversations,
@@ -150,7 +150,7 @@ def test_missing_json_gives_a_local_file_instruction(tmp_path):
 
 
 def test_training_checks_the_json_before_downloading_or_creating_model_artifacts(tmp_path):
-    from app.fine_tuning.huggingface import train
+    from app.fine_tuning.train import train
 
     output = tmp_path / "model-artifacts"
     with pytest.raises(ValueError, match="Benchmark JSON is missing"):

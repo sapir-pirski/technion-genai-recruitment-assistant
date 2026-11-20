@@ -1,4 +1,3 @@
-import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -31,62 +30,6 @@ class InfoDecision(StrictModel):
         if self.decision == "info_not_needed" and self.question is not None:
             raise ValueError("An unnecessary information request must not contain a question")
         return self
-
-
-class ProfileInputs(StrictModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    introduction: str = ""
-    linkedin_url: str = ""
-    file_name: str | None = None
-    file_data: bytes | None = Field(default=None, repr=False)
-
-
-class ProfileSections(StrictModel):
-    """Verbatim excerpts only; the application verifies each against the supplied text."""
-
-    name: str | None
-    experience: list[str]
-    skills: list[str]
-    education: list[str]
-    projects: list[str]
-
-
-class ChatProfileUpdate(StrictModel):
-    facts: ProfileSections
-    superseded_fact_ids: list[str] = Field(max_length=20)
-    confirmed_fact_ids: list[str] = Field(max_length=20)
-
-
-class FollowupQuestions(StrictModel):
-    questions: list[str] = Field(min_length=3, max_length=3)
-
-    @model_validator(mode="after")
-    def validate_questions(self):
-        cleaned = []
-        for question in self.questions:
-            question = question.strip()
-            if not 10 <= len(question) <= 140 or "\n" in question or "\r" in question:
-                raise ValueError("Suggestions must be short, single-line questions")
-            if not question.endswith("?") or question.count("?") != 1:
-                raise ValueError("Each suggestion must be one question")
-            if re.search(r"[<>\[\]`]|https?://|www\.", question, re.IGNORECASE):
-                raise ValueError("Suggestions must be plain text without links or markup")
-            cleaned.append(question)
-        keys = {re.sub(r"\W+", " ", question).strip().casefold() for question in cleaned}
-        if len(keys) != 3:
-            raise ValueError("Suggestions must be distinct")
-        self.questions = cleaned
-        return self
-
-
-class SuggestedQuestion(StrictModel):
-    id: str = Field(min_length=1, max_length=64)
-    text: str = Field(min_length=10, max_length=140)
-
-
-class SuggestionSelection(StrictModel):
-    suggestion_id: str = Field(min_length=1, max_length=64)
-    answer_request_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class ScheduleRequest(StrictModel):
@@ -178,5 +121,3 @@ class TurnResult(BaseModel):
     source_ids: list[str] = Field(default_factory=list)
     advisors: list[str] = Field(default_factory=list)
     error: str | None = None
-    suggested_questions: list[SuggestedQuestion] = Field(default_factory=list)
-    suggestion_source: Literal["model", "fallback", "none"] = "none"

@@ -1,25 +1,51 @@
+import pytest
 from streamlit.testing.v1 import AppTest
 
-from app.config import ROOT
-from app.suggestions import STARTER_QUESTIONS
+from app.config import ROOT, Settings
+from app.rag.ingest import ingest_pdf
+from streamlit_app.presentation import STARTER_QUESTIONS
 
-# These checks assert UI behavior against hosted PostgreSQL, not a latency target.
+# These checks assert UI behavior against disposable PostgreSQL, not a latency target.
 UI_TIMEOUT = 60
 
 
-def test_only_assignment_job_is_shown_with_legacy_postings_in_storage(backend, legacy_job):
+@pytest.fixture
+def indexed_job():
+    settings = Settings(_env_file=None)
+    return ingest_pdf(settings.job_pdf_path / "Python Developer Job Description.pdf", settings)
+
+
+def test_only_assignment_job_is_shown_with_legacy_postings_in_storage(
+    backend, legacy_job, indexed_job, monkeypatch
+):
+    import streamlit as st
+
+    native_download = st.download_button
+    downloads = []
+
+    def capture_download(*args, **kwargs):
+        downloads.append(kwargs)
+        return native_download(*args, **kwargs)
+
+    monkeypatch.setattr(st, "download_button", capture_download)
     test = AppTest.from_file(str(ROOT / "streamlit_app/streamlit_main.py")).run(timeout=UI_TIMEOUT)
     assert not test.exception
     assert test.title[0].value == "Python Developer"
     assert not test.selectbox
     assert not any(item.label == "Change role" for item in test.get("popover"))
     assert [
-        button.label for button in test.button if (button.key or "").startswith("suggestion_")
-    ] == [question.text for question in STARTER_QUESTIONS]
+        button.label for button in test.button if (button.key or "").startswith("starter_")
+    ] == list(STARTER_QUESTIONS)
     assert not test.chat_message
     backend.plan.assert_not_called()
     test.button(key="job_details").click().run(timeout=UI_TIMEOUT)
     assert not test.exception
+    assert (
+        downloads[-1]["data"]
+        == (ROOT / "data/jobs/Python Developer Job Description.pdf").read_bytes()
+    )
+    assert downloads[-1]["mime"] == "application/pdf" and not downloads[-1]["disabled"]
+    backend.plan.assert_not_called()
     test.button(key="close_description").click().run(timeout=UI_TIMEOUT)
     test.chat_input[0].set_value("Hello, I use Python").run(timeout=UI_TIMEOUT)
     assert not test.exception
@@ -27,46 +53,43 @@ def test_only_assignment_job_is_shown_with_legacy_postings_in_storage(backend, l
     test.chat_input[0].set_value("Please stop texting me").run(timeout=UI_TIMEOUT)
     assert not test.exception
     assert any("conversation is complete" in item.value for item in test.caption)
-    assert not any((button.key or "").startswith("suggestion_") for button in test.button)
+    assert not any((button.key or "").startswith("starter_") for button in test.button)
 
 
-def test_suggestion_buttons_use_background_and_only_latest_answer_questions(backend):
-    from app.schemas import ProfileSections
+def test_starters_send_plain_messages_and_background_is_supplied_in_chat(backend, indexed_job):
+    from app.schemas import InfoAnswer
 
-    backend.extract_profile.return_value = ProfileSections(
-        name=None, experience=[], skills=["Python"], education=[], projects=[]
+    backend.plan.return_value = backend.plan.return_value.model_copy(
+        update={"info_question": STARTER_QUESTIONS[0]}
+    )
+    backend.info.side_effect = lambda question, excerpts, history: InfoAnswer(
+        answer="Python and SQL are required.", source_ids=[excerpts[0]["id"]], supported=True
     )
     test = AppTest.from_file(str(ROOT / "streamlit_app/streamlit_main.py")).run(timeout=UI_TIMEOUT)
-    assert len(test.container(key="workspace").chat_input) == 1
-    test.text_area(key="introduction_text").set_value("I use Python.").run(timeout=UI_TIMEOUT)
-    test.button(key="suggestion_starter_starter-skills").click().run(timeout=UI_TIMEOUT)
-    assert not test.exception
-    assert not test.container(key="workspace").chat_input
     assert len(test.chat_input) == 1
-    backend.extract_profile.assert_called_once_with("I use Python.")
-    first_buttons = [
-        button for button in test.button if (button.key or "").startswith("suggestion_")
-    ]
-    assert len(first_buttons) == 3
-    first_texts = [button.label for button in first_buttons]
-    assert [button.label for button in test.chat_message[-1].button] == first_texts
-    assert test.chat_message[0].markdown[0].value == STARTER_QUESTIONS[0].text
-    calls = backend.suggest_followups.call_count
-    test.run(timeout=UI_TIMEOUT)
-    assert backend.suggest_followups.call_count == calls
-    first_buttons = [
-        button for button in test.button if (button.key or "").startswith("suggestion_")
-    ]
-    chosen = first_buttons[0].label
-    first_buttons[0].click().run(timeout=UI_TIMEOUT)
-    assert not test.exception and len(test.chat_message) == 4
-    assert test.chat_message[2].markdown[0].value == chosen
-    latest = [
-        button.label for button in test.button if (button.key or "").startswith("suggestion_")
-    ]
-    assert len(latest) == 3 and not set(first_texts) & set(latest)
-    assert [button.label for button in test.chat_message[-1].button] == latest
-    assert not test.chat_message[1].button
+    assert not test.text_area and not test.get("file_uploader")
+    test.button(key="starter_0").click().run(timeout=UI_TIMEOUT)
+    assert not test.exception and test.chat_message[0].markdown[0].value == STARTER_QUESTIONS[0]
+    assert not any((button.key or "").startswith("starter_") for button in test.button)
+    assert any("Source · page" in item.value for item in test.chat_message[-1].caption)
+    assert test.chat_message[-1].expander[0].label == "Sources"
+    assert any(
+        "Python Developer Job Description.pdf" in item.value
+        for item in test.chat_message[-1].expander[0].caption
+    )
+    calls = list(backend.method_calls)
+    test.button(key="job_details").click().run(timeout=UI_TIMEOUT)
+    test.button(key="close_description").click().run(timeout=UI_TIMEOUT)
+    assert not test.exception and backend.method_calls == calls
+    backend.plan.return_value = backend.plan.return_value.model_copy(update={"info_question": None})
+    test.chat_input[0].set_value("I have four years of Python experience.").run(timeout=UI_TIMEOUT)
+    assert not test.exception
+    messages = backend.plan.call_args.args[0]["messages"]
+    assert any(
+        message["content"] == "I have four years of Python experience." for message in messages
+    )
+    assert "candidate_profile" not in backend.plan.call_args.args[0]
+    assert not test.chat_message[-1].button
 
 
 def test_review_booking_retry_and_new_conversation(backend, repository, monkeypatch):
@@ -76,8 +99,8 @@ def test_review_booking_retry_and_new_conversation(backend, repository, monkeypa
     from sqlalchemy.orm import Session
     from streamlit.runtime.context import ContextProxy
 
-    from app.service import ChatService
-    from app.storage.models import Booking, Slot
+    from app.scheduling.models import Booking, Slot
+    from app.workflow.service import ChatService
 
     # All rows belong to this test's disposable PostgreSQL database.
     start = (datetime.now(UTC) + timedelta(days=2)).replace(

@@ -6,16 +6,19 @@ from uuid import uuid4
 
 from openai import OpenAIError
 
-from app.config import ROOT, Settings
-from app.ingestion.files import ORIGINAL_PDF_NAME
-from app.ingestion.models import ASSIGNMENT_DOCUMENT_ID, DEFAULT_JOB_ID
+from app.config import ASSIGNMENT_DOCUMENT_ID, DEFAULT_JOB_ID, ORIGINAL_PDF_NAME, ROOT, Settings
 from app.observability.logging import configure_logging
 
 
 def main():
     parser = argparse.ArgumentParser(description="Recruitment chatbot tools")
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("doctor", help="Check configuration without exposing secrets")
+    doctor = commands.add_parser("doctor", help="Check configuration without exposing secrets")
+    doctor.add_argument(
+        "--verify-exit",
+        action="store_true",
+        help="Fetch if configured and verify the selected fine-tuned Exit artifact",
+    )
     ingest = commands.add_parser("ingest", help="Embed the assignment Python Developer PDF")
     ingest.add_argument("--pdf", type=Path, help="Path to the assignment PDF in data/jobs")
     ingest.add_argument("--job-id", choices=[DEFAULT_JOB_ID], default=DEFAULT_JOB_ID)
@@ -34,6 +37,13 @@ def main():
     preparation.add_argument("--output", type=Path, default=ROOT / "data/processed")
     commands.add_parser(
         "export-conversations", help="Regenerate the conversation JSON snapshot from PostgreSQL"
+    )
+    legacy = commands.add_parser(
+        "copy-legacy", help="Copy legacy chats, bookings and checkpoints into an empty core schema"
+    )
+    legacy.add_argument("--source-schema", default="public")
+    legacy.add_argument(
+        "--dry-run", action="store_true", help="Validate the copy, then roll it back"
     )
     calendar = commands.add_parser(
         "calendar", help="Manage recruiter-approved interview availability"
@@ -118,8 +128,6 @@ def main():
         if args.command == "doctor":
             from sqlalchemy.engine import make_url
 
-            from app.profiles import document_converter
-
             result = {
                 "provider": "openai",
                 "openai_key_configured": bool(settings.openai_api_key.get_secret_value()),
@@ -133,15 +141,38 @@ def main():
                 if settings.database_url
                 else None,
                 "business_timezone": settings.business_timezone,
+                "database_schema": settings.database_schema,
                 "dataset_version": settings.dataset_version,
-                "document_converter_ready": bool(document_converter()),
             }
+            if args.verify_exit:
+                if settings.exit_provider != "huggingface":
+                    parser.exit(
+                        1,
+                        "The configured Exit provider is a prompted baseline, not the fine-tuned model.\n",
+                    )
+                from app.agents.backends.huggingface import (
+                    artifact_directory,
+                    verify_local_artifact,
+                )
+
+                artifact = verify_local_artifact(
+                    artifact_directory(settings), settings.hf_exit_revision
+                )
+                result.update(
+                    exit_artifact_verified=True,
+                    exit_artifact_sha256=artifact["files"]["model.onnx"],
+                    exit_artifact_source="huggingface_hub" if settings.hf_exit_repo_id else "local",
+                )
+        elif args.command == "copy-legacy":
+            from app.storage.legacy import copy_legacy
+
+            result = copy_legacy(settings, source_schema=args.source_schema, dry_run=args.dry_run)
         elif args.command == "ingest":
             from app.rag.ingest import ingest_pdf
 
             result = ingest_pdf(args.pdf or settings.job_pdf_path / ORIGINAL_PDF_NAME, settings)
         elif args.command in ("list-jobs", "index-status", "bootstrap"):
-            from app.ingestion.operations import operate
+            from app.rag.ingest import operate
 
             result = operate(
                 settings, args.command, if_needed=args.command == "bootstrap" and args.if_needed
@@ -150,14 +181,14 @@ def main():
                 print(json.dumps(result, indent=2))
                 parser.exit(1, "The assignment PDF index is incomplete. Run ingest.\n")
         elif args.command == "calendar":
-            from app.calendar import manage_calendar
+            from app.scheduling.calendar import manage_calendar
 
             result = manage_calendar(settings, args)
         elif args.command == "export-conversations":
-            from app.ingestion.registry import JobRegistry
-            from app.storage.conversation_repository import ConversationRepository
+            from app.rag.repository import JobDescriptionRepository
+            from app.storage.conversations import ConversationRepository
 
-            registry = JobRegistry(settings)
+            registry = JobDescriptionRepository(settings)
             try:
                 result = ConversationRepository(
                     registry.engine, settings.conversation_export_path
@@ -165,14 +196,14 @@ def main():
             finally:
                 registry.close()
         elif args.command == "prepare-data":
-            from app.evaluation.dataset import prepare_dataset
+            from app.dataset import prepare_dataset
 
             result = prepare_dataset(settings, args.output)
         elif args.command == "evaluate":
             if args.exit_provider:
                 settings = settings.model_copy(update={"exit_provider": args.exit_provider})
             if args.task == "workflow":
-                from app.evaluation.workflow import evaluate_workflows
+                from app.evaluation.replay import evaluate_workflows
 
                 if args.input is None:
                     raise ValueError("Workflow evaluation requires --input with controlled cases")
@@ -209,7 +240,7 @@ def main():
                     **report["all_turns"],
                 }
         elif args.command == "fine-tune-hf":
-            from app.fine_tuning.huggingface import export_onnx, train
+            from app.fine_tuning.train import export_onnx, train
 
             result = train(settings, args.output, epochs=args.epochs, seed=args.seed)
             result["export"] = export_onnx(settings, args.output)
@@ -220,11 +251,11 @@ def main():
                 settings, args.artifact, split=args.split, output=args.output
             )
         elif args.command == "activate-exit-hf":
-            from app.fine_tuning.huggingface import activate_local
+            from app.fine_tuning.train import activate_local
 
             result = activate_local()
         else:
-            from app.service import ChatService
+            from app.workflow.service import ChatService
 
             service = ChatService(settings)
             conversation = str(uuid4())

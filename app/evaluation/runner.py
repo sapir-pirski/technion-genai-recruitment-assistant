@@ -10,16 +10,16 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 from app.agents.backends.common import prompt_manifest
 from app.agents.backends.openai import OpenAIBackend
 from app.config import Settings
-from app.evaluation.dataset import (
+from app.dataset import (
     build_examples,
     dataset_fingerprint,
     load_conversations,
     split_examples,
 )
 from app.evaluation.metrics import summarize
-from app.service import ChatService
+from app.scheduling.repository import ScheduleRepository
 from app.storage.database import make_engine
-from app.storage.schedule_repository import ScheduleRepository
+from app.workflow.service import ChatService
 
 
 def evaluate(
@@ -84,7 +84,7 @@ def evaluate(
         "candidate_responses": summarize([row for row in rows if not row["is_opening"]], labels),
         "rows": rows,
         "limitations": [
-            f"{len(conversations)} conversations; results are exploratory.",
+            f"{len({row['conversation_id'] for row in examples})} evaluated conversations; results are exploratory.",
             "Historical transcripts lack verified slot IDs. The runtime refuses unverified bookings; gold labels sometimes assume them.",
             "No verified historical recruiter calendar was supplied; evaluation uses an empty isolated calendar and never invents availability.",
         ],
@@ -99,7 +99,7 @@ def evaluate(
 def _evaluate_actions(settings, examples, prompt_versions):
     # Runtime evaluation still uses SQL tools, isolated from interactive bookings.
     rows = []
-    engine = make_engine(settings.database_url)
+    engine = make_engine(settings.database_url, schema=settings.database_schema)
     schema = "evaluation_" + uuid4().hex
     with engine.begin() as connection:
         connection.execute(CreateSchema(schema))
@@ -218,7 +218,7 @@ def evaluate_local_exit(settings, artifact: Path, *, split="test", output: Path 
         ],
     }
     if output:
-        from app.fine_tuning.huggingface import write_json
+        from app.fine_tuning.train import write_json
 
         write_json(output, report)
     return report

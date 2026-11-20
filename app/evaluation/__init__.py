@@ -1,1 +1,1 @@
-"""Leakage-free dataset preparation and reproducible evaluation."""
+"""Labeled metrics, controlled workflow replay and offline answer grading."""
