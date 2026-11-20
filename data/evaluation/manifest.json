@@ -3,8 +3,8 @@
   "reviewed_on": "2026-11-20",
   "dataset_sha256": "94e925f72a43958a90743e477051ae0d053bfb63a11b3f07ffcb4b4126389830",
   "source_snapshot": {
-    "git_head": "fe0d78a7c7e2ebff47ace60154cbc6697b696b4a",
-    "uncommitted_changes": true,
+    "git_head": "50cdd0a0dd017dd44c5ac1e66016c036e4755bf0",
+    "uncommitted_changes": false,
     "code_sha256": "5ecb65dc124a1588c78a00706defccf3af96c9e1f8e990edbc5d409b21993e1c",
     "files": [
       "TASK.md",
@@ -76,7 +76,7 @@
     ],
     "code_sha256_method": "SHA-256 of sorted UTF-8 relative paths, NUL, raw file bytes, NUL, concatenated for every listed file",
     "captured_on": "2026-11-20",
-    "captured_before_release_commit": true
+    "captured_before_release_commit": false
   },
   "scope_confirmation": {
     "requirements_source": "TASK.md",
@@ -93,8 +93,8 @@
     "cloud_runtime_provider_verified": false,
     "current_refactor_deployed": false,
     "cloud_artifact_loader_implemented": true,
-    "cloud_model_artifact_published": false,
-    "cloud_artifact_publication_status": "pending_specific_upload_authorization",
+    "cloud_model_artifact_published": true,
+    "cloud_artifact_publication_status": "published_private_verified",
     "proposed_private_repository": "sapir-pirski/technion-recruitment-exit-8bfb0c30",
     "cloud_management_verified": true,
     "cloud_source_branch": "main",
@@ -106,7 +106,7 @@
     "hosted_pdf_chunks": 4,
     "legacy_public_tables_preserved": 22,
     "future_approved_availability_supplied": true,
-    "current_main_evaluation_status": "pending_specific_benchmark_transmission_authorization",
+    "current_main_evaluation_status": "complete",
     "approved_calendar": {
       "from_date": "2026-11-22",
       "to_date": "2026-12-31",
@@ -126,7 +126,10 @@
     "future_available_slots": 480,
     "last_configured_date": "2026-12-31",
     "calendar_timezone": "Asia/Jerusalem",
-    "source_release_branch": "simplify-assignment-release"
+    "source_release_branch": "simplify-assignment-release",
+    "model_repository_revision": "b743e0bfa41f7253a54dc5ec0abf6f878bed422c",
+    "current_main_test_report": "actions_test_current.json",
+    "cloud_runtime_status": "awaiting_repository_read_token"
   },
   "reports": [
     {
@@ -182,14 +185,19 @@
       "sha256": "5c539c034b8b3bb0cdc7066f268d3b5a72ae7d3f6672fd78981dfc7fc1885b9a",
       "record_kind": "current_controlled_model_replay",
       "created_at": "2026-11-20T10:18:46.105908+00:00"
+    },
+    {
+      "file": "actions_test_current.json",
+      "sha256": "1928c2652df890898481af87857d1bf9a9dc2aa7e16b65a7109b970be43579c9",
+      "record_kind": "current_heldout_model_run",
+      "created_at": "2026-11-20T12:36:58.760735+02:00"
     }
   ],
   "limitations": [
     "Historical Main and prompted Exit scores are not new measurements of the simplified workflow.",
-    "No live Main/OpenAI benchmark run was performed during this verification.",
     "Behavior tests use mocked model calls and do not establish model accuracy.",
     "Three test conversations and eleven labeled turns are a small exploratory sample.",
-    "The required fine-tuned Cloud release is not deployed; artifact publication and Cloud runtime verification are pending.",
-    "Current real-model controlled replay passed 15/15 fictitious steps; this is not held-out Main accuracy or a deployed Cloud check."
+    "Current real-model controlled replay passed 15/15 fictitious steps; this is not held-out Main accuracy or a deployed Cloud check.",
+    "The private model is published and current Main is measured; the required fine-tuned Cloud runtime still needs its repository read token and deployment verification."
   ]
 }

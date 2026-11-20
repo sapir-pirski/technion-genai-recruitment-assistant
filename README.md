@@ -144,6 +144,7 @@ jupyter execute tests/test_evals.ipynb --kernel_name recruitment --timeout 120 -
 
 | Measurement | Test result | Evidence |
 |---|---:|---|
+| Current Main, fine-tuned Exit | 6/11 all turns; 3/8 candidate-response turns | 20 November API run on the simplified workflow; no failures |
 | Historical Main, prompted Exit | 6/11 all turns; 3/8 candidate-response turns | 8 November saved run; previous workflow |
 | Historical prompted Exit | 10/11 | 8 November saved run |
 | Fine-tuned Exit | 9/11 test; 11/12 validation | Unchanged ONNX reproduced locally on 18 November |
@@ -154,11 +155,13 @@ false `end` recommendations. Three test conversations are a small exploratory
 sample. Openings and candidate-response decisions are reported separately, and
 failed calls receive no accuracy credit.
 
-The simplified Main workflow has not received a new held-out API measurement.
-That run is prepared but needs explicit authorization to transmit the redacted
-private dialogue to OpenAI. Historical metrics do not measure current Main
-accuracy. Historical transcripts also lack a verified calendar and slot IDs, so
-label agreement cannot establish booking correctness.
+The current Main run was measured on 20 November using source commit `50cdd0a`
+and the fine-tuned Exit artifact, after explicit authorization for the redacted
+benchmark transmission to OpenAI. Its accuracy matches the historical Main score;
+this does not establish equivalent behavior or an improvement. The current
+[per-example report](data/evaluation/actions_test_current.json) records model,
+prompt and source identities. Historical transcripts lack a verified calendar
+and slot IDs, so label agreement cannot establish booking correctness.
 
 When authorized, run current measurements to separate output files:
 
@@ -229,18 +232,19 @@ python -m ruff format --check app streamlit_app tests
 
 [TASK.md](TASK.md) requires Streamlit Community Cloud and a fine-tuned Exit
 Advisor. The existing [hosted app](https://technion-genai-recruitment-assistant.streamlit.app)
-is connected to GitHub `main`. This simplified release has not been deployed or
-verified there. Its fine-tuned artifact publication remains pending; the existing
-prompted deployment is not evidence of the required fine-tuned runtime.
+is connected to GitHub `main`. The verified private model is published at commit
+`b743e0bfa41f7253a54dc5ec0abf6f878bed422c`; downloading it through the pinned runtime
+loader and performing local ONNX inference both pass. The Cloud release is waiting
+for its repository-read credential and live deployment verification.
 
-Publish only the three verified runtime files to the private model repository,
-then configure Streamlit **Settings → Secrets** with these fields plus the existing
+The private repository contains only the three verified runtime files. Configure
+Streamlit **Settings → Secrets** with these fields plus the existing
 OpenAI and database credentials:
 
 ```toml
 EXIT_PROVIDER = "huggingface"
 HF_EXIT_REPO_ID = "sapir-pirski/technion-recruitment-exit-8bfb0c30"
-HF_EXIT_REPO_REVISION = "<immutable 40-character model repository commit>"
+HF_EXIT_REPO_REVISION = "b743e0bfa41f7253a54dc5ec0abf6f878bed422c"
 HF_EXIT_REVISION = "8bfb0c30560f6069412ff19210678ce1ca6f5c8b08b5db3fb92375c9ff631582"
 HF_TOKEN = "<read token for this private repository>"
 DATABASE_SCHEMA = "recruitment"
@@ -274,12 +278,8 @@ contents. No candidate histories or bookings were copied. The approved extension
 appointments from 22 November through 31 December 2026: Sunday–Thursday,
 09:00–17:00 Asia/Jerusalem, in 30-minute slots. These are in the new schema and
 will become available to the new Cloud release when deployed.
-The owner approved extending the existing availability pattern through year-end:
-the new calendar covers 22 November–31 December, Sunday–Thursday, 09:00–17:00
-Asia/Jerusalem, with 30-minute appointments. The currently deployed older app
-continues using its legacy schema until this release is deployed.
 
-Remaining release evidence: publish the private model artifact, measure current
-Main on the authorized benchmark, and configure and verify the fine-tuned Cloud
-runtime. These are recorded
-as pending rather than inferred from older deployment or model scores.
+The private model is published and current Main is measured. Remaining release
+steps are the repository-read credential, deployment and verification of the
+fine-tuned Cloud runtime. The prior hosted version continues using its legacy
+schema until that release is deployed.
