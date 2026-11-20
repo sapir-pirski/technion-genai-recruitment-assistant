@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "reviewed_on": "2026-11-20",
+  "dataset_sha256": "94e925f72a43958a90743e477051ae0d053bfb63a11b3f07ffcb4b4126389830",
+  "source_snapshot": {
+    "git_head": "50cdd0a0dd017dd44c5ac1e66016c036e4755bf0",
+    "uncommitted_changes": false,
+    "code_sha256": "5ecb65dc124a1588c78a00706defccf3af96c9e1f8e990edbc5d409b21993e1c",
+    "files": [
+      "TASK.md",
+      "app/__init__.py",
+      "app/agents/__init__.py",
+      "app/agents/backends/__init__.py",
+      "app/agents/backends/common.py",
+      "app/agents/backends/huggingface.py",
+      "app/agents/backends/openai.py",
+      "app/agents/exit_advisor.py",
+      "app/agents/info_advisor.py",
+      "app/agents/main_agent.py",
+      "app/agents/scheduling_advisor.py",
+      "app/config.py",
+      "app/dataset.py",
+      "app/evaluation/__init__.py",
+      "app/evaluation/judge.py",
+      "app/evaluation/metrics.py",
+      "app/evaluation/replay.py",
+      "app/evaluation/runner.py",
+      "app/fine_tuning/__init__.py",
+      "app/fine_tuning/exit_data.py",
+      "app/fine_tuning/train.py",
+      "app/guardrails.py",
+      "app/main.py",
+      "app/observability/__init__.py",
+      "app/observability/logging.py",
+      "app/observability/pricing.py",
+      "app/observability/tracing.py",
+      "app/prompts/exit.txt",
+      "app/prompts/info.txt",
+      "app/prompts/info_decision.txt",
+      "app/prompts/judge.txt",
+      "app/prompts/main.txt",
+      "app/prompts/scheduling.txt",
+      "app/rag/__init__.py",
+      "app/rag/description.py",
+      "app/rag/ingest.py",
+      "app/rag/models.py",
+      "app/rag/repository.py",
+      "app/rag/retriever.py",
+      "app/rag/store.py",
+      "app/scheduling/__init__.py",
+      "app/scheduling/calendar.py",
+      "app/scheduling/dates.py",
+      "app/scheduling/models.py",
+      "app/scheduling/preferences.py",
+      "app/scheduling/repository.py",
+      "app/scheduling/tools.py",
+      "app/schemas.py",
+      "app/storage/__init__.py",
+      "app/storage/conversations.py",
+      "app/storage/database.py",
+      "app/storage/legacy.py",
+      "app/storage/models.py",
+      "app/workflow/__init__.py",
+      "app/workflow/graph.py",
+      "app/workflow/service.py",
+      "app/workflow/state.py",
+      "pyproject.toml",
+      "requirements-dev.txt",
+      "requirements-training.txt",
+      "requirements.txt",
+      "run-full-project.sh",
+      "streamlit_app/__init__.py",
+      "streamlit_app/presentation.py",
+      "streamlit_app/streamlit_main.py",
+      "streamlit_app/styles.css"
+    ],
+    "code_sha256_method": "SHA-256 of sorted UTF-8 relative paths, NUL, raw file bytes, NUL, concatenated for every listed file",
+    "captured_on": "2026-11-20",
+    "captured_before_release_commit": false
+  },
+  "scope_confirmation": {
+    "requirements_source": "TASK.md",
+    "huggingface_allowed": true,
+    "confirmation_source": "User confirmation on 2026-11-18",
+    "reported_reason": "OpenAI fine-tuning permissions unavailable",
+    "required_cloud_exit": "fine_tuned",
+    "local_only_substitute": false
+  },
+  "deployment": {
+    "public_url": "https://technion-genai-recruitment-assistant.streamlit.app",
+    "local_exit_provider": "huggingface",
+    "fresh_checkout_default": "huggingface",
+    "cloud_runtime_provider_verified": false,
+    "current_refactor_deployed": false,
+    "cloud_artifact_loader_implemented": true,
+    "cloud_model_artifact_published": true,
+    "cloud_artifact_publication_status": "published_private_verified",
+    "proposed_private_repository": "sapir-pirski/technion-recruitment-exit-8bfb0c30",
+    "cloud_management_verified": true,
+    "cloud_source_branch": "main",
+    "cloud_secret_keys_verified": [
+      "OPENAI_API_KEY",
+      "DATABASE_URL"
+    ],
+    "hosted_core_schema_prepared": true,
+    "hosted_pdf_chunks": 4,
+    "legacy_public_tables_preserved": 22,
+    "future_approved_availability_supplied": true,
+    "current_main_evaluation_status": "complete",
+    "approved_calendar": {
+      "from_date": "2026-11-22",
+      "to_date": "2026-12-31",
+      "weekdays": [
+        "sun",
+        "mon",
+        "tue",
+        "wed",
+        "thu"
+      ],
+      "start_time": "09:00",
+      "end_time": "17:00",
+      "timezone": "Asia/Jerusalem",
+      "duration_minutes": 30
+    },
+    "release_branch": "simplify-assignment-release",
+    "future_available_slots": 480,
+    "last_configured_date": "2026-12-31",
+    "calendar_timezone": "Asia/Jerusalem",
+    "source_release_branch": "simplify-assignment-release",
+    "model_repository_revision": "b743e0bfa41f7253a54dc5ec0abf6f878bed422c",
+    "current_main_test_report": "actions_test_current.json",
+    "cloud_runtime_status": "awaiting_repository_read_token"
+  },
+  "reports": [
+    {
+      "file": "actions_test_baseline.json",
+      "sha256": "1ac65a0ec5593ce5d6210a7605dddbfa275bf8aaffff93a63caec2cc8298a9b5",
+      "record_kind": "historical_model_run",
+      "created_at": "2026-11-08T00:31:57.209050+02:00"
+    },
+    {
+      "file": "exit_test_baseline.json",
+      "sha256": "0a9c1c1aa0396faceac78c93762f6d1c10cb63d1e278e6a50e555a814d04dcb0",
+      "record_kind": "historical_model_run",
+      "created_at": "2026-11-08T00:02:47.483828+02:00"
+    },
+    {
+      "file": "exit_test_huggingface.json",
+      "sha256": "7beeb7c2621c2bc7e6c974822bae882ff2e706f63fb9f11ab830172309973214",
+      "record_kind": "historical_model_run",
+      "created_at": "2026-11-08T00:13:53.665714+02:00"
+    },
+    {
+      "file": "actions_validation_baseline.json",
+      "sha256": "28ac1cb78f6b8c7ec84d1d5e009db1be6712f0927c3e4ac2c6873ae130cdba49",
+      "record_kind": "historical_model_run",
+      "created_at": "2026-11-07T21:10:05.481838+02:00"
+    },
+    {
+      "file": "exit_validation_baseline.json",
+      "sha256": "19baae338698925bc1ff6a22b579541623e8b5b5dc359279bf18c70feeca797c",
+      "record_kind": "historical_model_run",
+      "created_at": "2026-11-07T21:10:19.724331+02:00"
+    },
+    {
+      "file": "exit_test_huggingface_verified.json",
+      "sha256": "e7909b9847a9ec95f0690a8cb0dabc127728110e7a6da46ee51813cc4355ff99",
+      "record_kind": "local_classifier_verification",
+      "created_at": "2026-11-18T21:27:11.814427+02:00"
+    },
+    {
+      "file": "exit_validation_huggingface_verified.json",
+      "sha256": "a92b994dd700750e69f4f9e51268ea5bae1056cd559a50274d04316c9eed61c2",
+      "record_kind": "local_classifier_verification",
+      "created_at": "2026-11-18T21:27:11.868232+02:00"
+    },
+    {
+      "file": "exit_training_summary.json",
+      "sha256": "c69909276b8bdf601e1d746e95270f710d2f8f2681a80f259251f934ea3e42c9",
+      "record_kind": "historical_training_summary",
+      "created_at": "2026-11-07T20:44:59.751520+00:00"
+    },
+    {
+      "file": "workflow_current.json",
+      "sha256": "5c539c034b8b3bb0cdc7066f268d3b5a72ae7d3f6672fd78981dfc7fc1885b9a",
+      "record_kind": "current_controlled_model_replay",
+      "created_at": "2026-11-20T10:18:46.105908+00:00"
+    },
+    {
+      "file": "actions_test_current.json",
+      "sha256": "1928c2652df890898481af87857d1bf9a9dc2aa7e16b65a7109b970be43579c9",
+      "record_kind": "current_heldout_model_run",
+      "created_at": "2026-11-20T12:36:58.760735+02:00"
+    }
+  ],
+  "limitations": [
+    "Historical Main and prompted Exit scores are not new measurements of the simplified workflow.",
+    "Behavior tests use mocked model calls and do not establish model accuracy.",
+    "Three test conversations and eleven labeled turns are a small exploratory sample.",
+    "Current real-model controlled replay passed 15/15 fictitious steps; this is not held-out Main accuracy or a deployed Cloud check.",
+    "The private model is published and current Main is measured; the required fine-tuned Cloud runtime still needs its repository read token and deployment verification."
+  ]
+}

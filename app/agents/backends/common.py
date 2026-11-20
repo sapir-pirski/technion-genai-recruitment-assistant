@@ -9,9 +9,6 @@ OPERATION_PROMPTS = {
     "scheduling": "scheduling",
     "info_decision": "info_decision",
     "exit": "exit",
-    "profile_extraction": "profile",
-    "chat_profile": "chat_profile",
-    "followups": "followups",
     "judge": "judge",
 }
 
@@ -55,22 +52,11 @@ def latest_text(state: dict) -> str:
     return messages[-1]["content"] if messages and messages[-1]["role"] == "user" else ""
 
 
-def model_context(state: dict, *, include_profile=True) -> dict:
-    # Deliberately excludes labels, evaluation targets, and internal credentials.
-    profile = state.get("candidate_profile", {})
-    context = {
+def model_context(state: dict) -> dict:
+    # Background is supplied in conversation history; labels and credentials stay out.
+    return {
         "history": state.get("messages", []),
         "job": state.get("job_context", {}),
-        "candidate_profile": {
-            key: value
-            for key, value in profile.items()
-            if key in {"sections", "conflicts", "missing_information", "verification"}
-        },
-        "profile_status": state.get("profile_status", "empty"),
-        "profile_issues": [
-            {"source_kind": issue["source_kind"], "error_code": issue["error_code"]}
-            for issue in state.get("profile_issues", [])
-        ],
         "reference_time": state["reference_time"],
         "timezone": state["timezone"],
         "offered_slots": state.get("offered_slots", []),
@@ -81,12 +67,7 @@ def model_context(state: dict, *, include_profile=True) -> dict:
         "remaining_consultations": max(
             0, state.get("max_consultations", 3) - state.get("consultation_count", 0)
         ),
-        "input_kind": state.get("input_kind", "chat"),
     }
-    if not include_profile:
-        for key in ("candidate_profile", "profile_status", "profile_issues"):
-            context.pop(key, None)
-    return context
 
 
 def explicit_stop(text: str) -> bool:

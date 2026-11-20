@@ -1,67 +1,47 @@
-# Security policy
+# Data handling
 
-## Project status
+The application is an assignment proof of concept. Its Streamlit interface has no
+application-level user authentication; run the demo with fictitious candidate
+messages and sample availability unless access and retention are established for
+real use.
 
-This project is a recruitment chatbot proof of concept. It has no authentication
-or cross-device conversation recovery and is not intended to handle real candidate
-data on a public deployment without additional access controls and a security review.
-Security fixes target the current development version; there is no supported
-release or guaranteed response timeline yet.
+Credentials belong in the ignored `.env` or `.streamlit/secrets.toml` locally and
+Streamlit's secrets manager in Community Cloud. Hosted PostgreSQL connections
+require TLS. Use a model-repository read token for deployment.
 
-## Reporting a vulnerability
+## Benchmark and model artifacts
 
-Use the repository's private vulnerability reporting feature if it is enabled.
-Otherwise, contact the maintainer through an established private channel and ask
-for a secure way to share the report. A dedicated security contact has not yet
-been published. Do not post exploit details, credentials, or candidate data in
-public issues or pull requests.
+`data/sms_conversations.json` contains private dialogue and may include candidate
+and recruiter contact metadata. Keep it, generated splits, backups and training
+artifacts outside version control. Evaluation and training read local JSON, not
+runtime database tables. Contact columns and gold labels are excluded from model
+inputs; phone/email and credential-shaped patterns are redacted. Remaining dialogue
+can still be private, so API evaluation requires authorization to transmit it.
 
-Include the affected version or commit, the impact, steps to reproduce, and a
-minimal example using synthetic data. Remove secrets and personal information
-from logs and screenshots. Coordinate public disclosure with the maintainer
-after a fix is available.
+The fine-tuned ONNX weights derive from that benchmark. Private model publication
+includes only weights, tokenizer and checksum manifest; it excludes raw dialogue,
+contacts and credentials. Hub downloads are pinned to an immutable commit and
+validated before inference. Candidate text stays in the application for Exit
+inference; Main/Info/Scheduling and embeddings use the configured OpenAI API.
 
-## Secrets and candidate data
+`data/evaluation/` contains shareable metrics, per-example labels, numeric example
+IDs and training provenance. It excludes dialogue, generated replies and contact
+values. The notebook displays these snapshots without network requests.
 
-- Keep API keys and database credentials in local environment variables, `.env`,
-  or deployment secrets. Never commit them or `.streamlit/secrets.toml`.
-- Keep chat histories, databases, generated datasets, and evaluation artifacts
-  out of source control. Use synthetic data for isolated testing.
-- Rotate exposed credentials immediately and remove them from repository history
-  and shared artifacts where possible.
-- Model and embedding requests send relevant content to OpenAI.
-  Review what data may be shared before using real candidate information.
-- PostgreSQL conversation tables and `artifacts/conversations.json` contain private
-  message text. The export is ignored by Git and written with owner-only permissions.
-  Restrict database/filesystem access and remove records according to your retention policy.
-- Benchmark tables preserve the supplied conversation text and source contact metadata.
-  Keep their backups private. Data preparation excludes contact columns and redacts
-  phone/email patterns from model inputs; benchmark labels stay separate from runtime predictions.
-- Technical logs and trace attributes contain identifiers, timing, usage, and
-  sanitized error codes. Raw prompts, exception text, message contents, and secrets
-  are excluded from technical diagnostics. Stored model actions are predictions;
-  generated conversation labels remain NULL until separately verified.
+## Runtime storage
 
-## Deployment and dependencies
+The isolated `recruitment` PostgreSQL schema holds the assignment PDF/index,
+approved appointments, bookings, conversation messages and LangGraph checkpoints.
+The previous `public` tables remain intact. Optional legacy copying must be invoked
+explicitly and requires an empty target; it preserves source rows.
 
-- Restrict access to the application and databases; use encrypted connections
-  when accessing remote services.
-- Use a database account with only the permissions the application needs.
-- Review dependency updates and run the documented checks before deploying.
-- Treat retrieved documents and candidate messages as untrusted input. Preserve
-  validated scheduling tools and explicit booking confirmation checks.
+Conversation records, checkpoints and `artifacts/conversations.json` may contain
+private messages. The export is Git-ignored and written with owner-only permissions.
+Restrict access to database credentials, backups and local artifacts, and set an
+appropriate retention policy before handling real candidates.
 
-## External job documents
-
-The ingestion worker fetches only explicitly reviewed employer/recruiter URLs
-and configured public APIs with pinned IDs. Automatic job discovery is disabled. Job content is
-untrusted data, not agent instructions. Generated PDFs escape source markup and
-use bundled licensed fonts; unsupported glyphs or unreadable pages fail explicitly.
-PDF size/page-stream limits reduce accidental resource exhaustion but do not
-constitute a hostile-document sandbox. Review source terms before redistribution.
-
-Keep the worker and frontend on the same durable PostgreSQL database with pgvector.
-The catalog publication filter prevents partial versions and unrelated jobs from
-entering a role's retrieval results. Imported jobs are reference-only and cannot
-use the assignment's sample interview slots. Scheduler reports/logs can contain
-public job titles and source URLs; keep them separate from candidate data.
+Technical logs and request-local traces omit raw prompts, message contents, secret
+values and raw exception text. They retain identifiers, timing, decisions, usage
+and sanitized error codes. PDF ingestion accepts only the assignment PDF, checks
+size and extracted page content, and publishes a complete index before replacing
+the active version.
