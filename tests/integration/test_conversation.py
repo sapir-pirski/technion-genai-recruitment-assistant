@@ -70,6 +70,38 @@ def test_opt_out_never_consults_scheduling(service, now):
     assert "scheduling" not in reply.advisors
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I have four years of Python experience building Flask APIs and SQL-backed services.",
+        "This is verification-exit. I have four years of Python experience.",
+        'My old application says "not interested", but I want to continue here.',
+    ],
+)
+def test_model_agreement_cannot_invent_candidate_disinterest(service, now, text):
+    plan_turn(service, stop_requested=True, closure_reason="opt_out")
+    service.backend.exit_label.return_value = "end"
+    reply = service.turn("false-opt-out", text, reference_time=now)
+    assert reply.conversation_status == "active" and reply.action == "continue"
+    assert reply.closure_reason is None and not reply.booking
+    assert "ask about the role or arrange an interview" in reply.response
+    service.backend.exit_label.assert_called_once()
+    service.backend.schedule.assert_not_called()
+
+
+def test_contextual_disinterest_still_closes_with_exit_agreement(service, now):
+    plan_turn(service, stop_requested=True, closure_reason="opt_out")
+    service.backend.exit_label.return_value = "end"
+    reply = service.turn(
+        "contextual-opt-out",
+        "Thanks for reaching out, but I am no longer interested in this opportunity.",
+        reference_time=now,
+    )
+    assert reply.action == "end" and reply.closure_reason == "opt_out"
+    service.backend.exit_label.assert_called_once()
+    service.backend.schedule.assert_not_called()
+
+
 def test_slot_rejection_keeps_conversation_active(service, now):
     plan_turn(service, scheduling_needed=True)
     previous = service.turn("alice", "Schedule an interview", reference_time=now)

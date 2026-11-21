@@ -85,3 +85,20 @@ def explicit_stop(text: str) -> bool:
             normalized,
         )
     )
+
+
+def has_opt_out_signal(text: str) -> bool:
+    """Ground a contextual opt-out in the candidate's words, excluding quoted text."""
+    text = re.sub(r'"[^"\n]*"|“[^”\n]*”|(?<!\w)\x27[^\x27\n]*\x27(?!\w)', "", text)
+    normalized = " ".join(text.casefold().replace("’", "'").split())
+    return bool(
+        re.search(
+            r"\b(?:not interested|no longer interested|not (?:currently )?looking for|"
+            r"(?:stop|don't|do not) (?:contacting|messaging|texting|contact|message|text) me|"
+            r"(?:withdraw|cancel) my (?:application|candidacy)|"
+            r"(?:end|leave) (?:this |the )?conversation|"
+            r"(?:i have|i've|i) (?:accepted|found) (?:another|a) (?:job|offer)|"
+            r"(?:won't|will not|don't want to) (?:pursue|proceed)|no (?:thanks|thank you))\b",
+            normalized,
+        )
+    )

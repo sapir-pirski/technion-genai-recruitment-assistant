@@ -2,7 +2,7 @@ import hashlib
 import json
 import re
 
-from app.agents.backends.common import explicit_stop, latest_text
+from app.agents.backends.common import explicit_stop, has_opt_out_signal, latest_text
 from app.schemas import Plan, TurnResult
 
 
@@ -136,15 +136,26 @@ def booking_acknowledged(state: dict) -> bool:
 def should_close(state: dict) -> bool:
     if booking_acknowledged(state):
         return False
+    # Output validation runs after compose has appended the assistant reply.
+    text = next(
+        (
+            message["content"]
+            for message in reversed(state.get("messages", []))
+            if message["role"] == "user"
+        ),
+        "",
+    )
     plan = state.get("turn_intent") or state.get("plan", {})
     if plan.get("stop_requested"):
         # A profile fact or a Main Agent assertion alone cannot authorize closure.
-        return explicit_stop(latest_text(state)) or (
-            plan.get("closure_reason") == "opt_out" and state.get("exit_label") == "end"
+        return explicit_stop(text) or (
+            plan.get("closure_reason") == "opt_out"
+            and state.get("exit_label") == "end"
+            and has_opt_out_signal(text)
         )
     # Exit's binary label also covers completed scheduling. Without an opt-out
     # intent it cannot establish closure; only a SQL receipt establishes completion.
-    return explicit_stop(latest_text(state))
+    return explicit_stop(text)
 
 
 def compose(state: dict) -> dict:
@@ -202,7 +213,9 @@ def compose(state: dict) -> dict:
                 parts.append("Would you like to arrange an interview?")
         if not parts:
             question = (
-                "Would you like to end the conversation, or continue arranging an interview?"
+                "Would you like to ask about the role or arrange an interview?"
+                if intent.get("stop_requested") and not has_opt_out_signal(latest_text(state))
+                else "Would you like to end the conversation, or continue arranging an interview?"
                 if state.get("exit_label") == "end"
                 else plan["next_question"]
             )
