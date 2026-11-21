@@ -2,7 +2,7 @@
   "provider": "openai",
   "task": "workflow",
   "evaluation_mode": "controlled_stateful_replay",
-  "created_at": "2026-11-20T10:18:46.105908+00:00",
+  "created_at": "2026-11-21T17:03:53.787956+00:00",
   "model_policy": {
     "main": {
       "model": "gpt-4o-mini",
@@ -575,9 +575,12 @@
   ],
   "provenance": {
     "record_kind": "current_controlled_model_replay",
-    "source_report_sha256": "6fb054710a45ea670f44ea5fc79645bbf612bf6adc7b46ffbc98404996bd3a14",
+    "source_report_sha256": "f1c4ee6efd75aa4878b3978aced59ba46c356622fd758412d3e3d007e495edc6",
+    "source_git_commit": "8a6000e3010a935981c9477b8637ad02c250a9b7",
+    "source_code_sha256": "99a42ac308849b8cf93ac65bc82c368997f280c46eb7c848fc6668ea524e99d0",
+    "production_calendar_used": false,
+    "retraining": false,
     "private_benchmark_used": false,
-    "calendar": "disposable local PostgreSQL schema",
     "real_model_calls": true,
     "production_bookings_modified": false
   }

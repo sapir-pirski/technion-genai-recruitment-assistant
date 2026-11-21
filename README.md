@@ -62,6 +62,8 @@ PDF download are available from the header. Supply experience directly in chat.
 Ask to arrange an interview to see up to three available SQL appointments in the
 browser's timezone. Select an appointment, review it and explicitly confirm it.
 A confirmed booking is retained across retries. Opting out closes the conversation.
+Closure requires evidence in the candidate’s message, so an Exit recommendation
+alone cannot close an ordinary experience statement.
 “New conversation” starts another thread while preserving recorded messages and
 confirmed bookings.
 
@@ -144,7 +146,7 @@ jupyter execute tests/test_evals.ipynb --kernel_name recruitment --timeout 120 -
 
 | Measurement | Test result | Evidence |
 |---|---:|---|
-| Current Main, fine-tuned Exit | 6/11 all turns; 3/8 candidate-response turns | 20 November API run on the simplified workflow; no failures |
+| Current Main, fine-tuned Exit | 6/11 all turns; 3/8 candidate-response turns | 21 November API run after the closure guard fix; no failures |
 | Historical Main, prompted Exit | 6/11 all turns; 3/8 candidate-response turns | 8 November saved run; previous workflow |
 | Historical prompted Exit | 10/11 | 8 November saved run |
 | Fine-tuned Exit | 9/11 test; 11/12 validation | Unchanged ONNX reproduced locally on 18 November |
@@ -155,7 +157,7 @@ false `end` recommendations. Three test conversations are a small exploratory
 sample. Openings and candidate-response decisions are reported separately, and
 failed calls receive no accuracy credit.
 
-The current Main run was measured on 20 November using source commit `50cdd0a`
+The current Main run was measured on 21 November using source commit `8a6000e`
 and the fine-tuned Exit artifact, after explicit authorization for the redacted
 benchmark transmission to OpenAI. Its accuracy matches the historical Main score;
 this does not establish equivalent behavior or an improvement. The current
@@ -175,7 +177,7 @@ OPENAI_API_KEY= DATABASE_URL= HF_TOKEN= python -m app.main evaluate-exit-hf --sp
 Controlled replay uses the fictitious [workflow cases](tests/fixtures/workflow_cases.json),
 a disposable SQL calendar and the real model workflow. It checks citations,
 relative dates, offers, explicit booking, retries and closure separately from
-historical accuracy. The current run on **20 November 2026** passed **15/15 turns
+historical accuracy. The current run on **21 November 2026** passed **15/15 turns
 across six cases**, using real OpenAI calls and the fine-tuned local Exit model:
 
 ```bash
@@ -211,10 +213,10 @@ set `HF_EXIT_LOCAL_PATH` and their model SHA-256 in `HF_EXIT_REVISION` and resta
 
 ## Tests
 
-The suite contains 135 tests, including native Streamlit behavior, SQL booking
+The suite contains 139 tests, including native Streamlit behavior, SQL booking
 concurrency, retries, schema isolation, PDF index repair and model integrity.
-All 135 passed from a fresh source copy and newly installed environment on
-20 November. The notebook executed all 13 code cells without errors; fresh
+All 139 passed from a fresh source copy and newly installed environment on
+21 November. The notebook executed all 13 code cells without errors; fresh
 ONNX inference reproduced 9/11 test predictions, and native Streamlit startup
 selected the fine-tuned provider without model API calls.
 Model calls in automated tests are mocked; test pass counts do not establish
@@ -234,8 +236,11 @@ python -m ruff format --check app streamlit_app tests
 Advisor. The existing [hosted app](https://technion-genai-recruitment-assistant.streamlit.app)
 is connected to GitHub `main`. The verified private model is published at commit
 `b743e0bfa41f7253a54dc5ec0abf6f878bed422c`; downloading it through the pinned runtime
-loader and performing local ONNX inference both pass. The Cloud release is waiting
-for its repository-read credential and live deployment verification.
+loader and performing local ONNX inference both pass. The deployed Cloud app uses
+this fine-tuned Exit model. Live verification on 21 November covered cited answers,
+three available appointments, explicit booking, durable recovery and opt-out.
+Public access was checked in a separate browser. Text-free evidence is in
+[deployment_verification.json](data/evaluation/deployment_verification.json).
 
 The private repository contains only the three verified runtime files. Configure
 Streamlit **Settings → Secrets** with these fields plus the existing
@@ -266,7 +271,7 @@ to the source repository. Cloud secrets belong in its
 
 ## Assignment status
 
-The Main/three-advisor architecture, fine-tuned local Exit, offline PDF embeddings
+The Main/three-advisor architecture, fine-tuned Exit, offline PDF embeddings
 in PostgreSQL/pgvector, SQL scheduling, Streamlit UI and executed evaluation notebook
 are implemented. The preserved working checkpoint is tagged
 `baseline-single-job-json`, with a verified private backup under
@@ -276,10 +281,12 @@ On 20 November, the hosted `recruitment` schema was initialized with all 11 tabl
 and four assignment PDF chunks. All 22 legacy `public` tables retained their
 contents. No candidate histories or bookings were copied. The approved extension adds 480
 appointments from 22 November through 31 December 2026: Sunday–Thursday,
-09:00–17:00 Asia/Jerusalem, in 30-minute slots. These are in the new schema and
-will become available to the new Cloud release when deployed.
+09:00–17:00 Asia/Jerusalem, in 30-minute slots. All 480 are available in the
+deployed app after removal of the fictitious verification booking.
 
-The private model is published and current Main is measured. Remaining release
-steps are the repository-read credential, deployment and verification of the
-fine-tuned Cloud runtime. The prior hosted version continues using its legacy
-schema until that release is deployed.
+The simplified source is deployed from `main` with the fine-tuned Cloud Exit
+model and isolated `recruitment` schema. Current Main is measured, the evaluation
+notebook is executed, and live verification is complete. Fictitious verification
+conversations and their booking were backed up privately and removed.
+The live check also found and fixed a false opt-out closure; the corrected
+background and explicit opt-out paths were verified in the deployed app.

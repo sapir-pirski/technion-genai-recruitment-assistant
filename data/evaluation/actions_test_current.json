@@ -89,7 +89,7 @@
   "split": "test",
   "dataset_version": "assignment-v1",
   "dataset_sha256": "94e925f72a43958a90743e477051ae0d053bfb63a11b3f07ffcb4b4126389830",
-  "created_at": "2026-11-20T12:36:58.760735+02:00",
+  "created_at": "2026-11-21T19:03:56.425485+02:00",
   "all_turns": {
     "count": 11,
     "accuracy": 0.5454545454545454,
@@ -224,52 +224,52 @@
       "predicted": "continue",
       "error": null,
       "is_opening": true,
+      "seconds": 0.011
+    },
+    {
+      "conversation_id": 9,
+      "turn_id": 3,
+      "expected": "schedule",
+      "predicted": "continue",
+      "error": null,
+      "is_opening": false,
+      "seconds": 12.342
+    },
+    {
+      "conversation_id": 9,
+      "turn_id": 5,
+      "expected": "continue",
+      "predicted": "continue",
+      "error": null,
+      "is_opening": false,
+      "seconds": 16.297
+    },
+    {
+      "conversation_id": 9,
+      "turn_id": 7,
+      "expected": "end",
+      "predicted": "continue",
+      "error": null,
+      "is_opening": false,
+      "seconds": 9.81
+    },
+    {
+      "conversation_id": 12,
+      "turn_id": 1,
+      "expected": "continue",
+      "predicted": "continue",
+      "error": null,
+      "is_opening": true,
       "seconds": 0.012
     },
     {
-      "conversation_id": 9,
-      "turn_id": 3,
-      "expected": "schedule",
-      "predicted": "continue",
-      "error": null,
-      "is_opening": false,
-      "seconds": 12.271
-    },
-    {
-      "conversation_id": 9,
-      "turn_id": 5,
-      "expected": "continue",
-      "predicted": "continue",
-      "error": null,
-      "is_opening": false,
-      "seconds": 18.199
-    },
-    {
-      "conversation_id": 9,
-      "turn_id": 7,
-      "expected": "end",
-      "predicted": "continue",
-      "error": null,
-      "is_opening": false,
-      "seconds": 9.101
-    },
-    {
-      "conversation_id": 12,
-      "turn_id": 1,
-      "expected": "continue",
-      "predicted": "continue",
-      "error": null,
-      "is_opening": true,
-      "seconds": 0.017
-    },
-    {
       "conversation_id": 12,
       "turn_id": 3,
       "expected": "schedule",
       "predicted": "continue",
       "error": null,
       "is_opening": false,
-      "seconds": 8.688
+      "seconds": 9.36
     },
     {
       "conversation_id": 12,
@@ -278,7 +278,7 @@
       "predicted": "schedule",
       "error": null,
       "is_opening": false,
-      "seconds": 4.301
+      "seconds": 4.863
     },
     {
       "conversation_id": 12,
@@ -287,7 +287,7 @@
       "predicted": "schedule",
       "error": null,
       "is_opening": false,
-      "seconds": 4.086
+      "seconds": 4.183
     },
     {
       "conversation_id": 15,
@@ -296,7 +296,7 @@
       "predicted": "continue",
       "error": null,
       "is_opening": true,
-      "seconds": 0.018
+      "seconds": 0.015
     },
     {
       "conversation_id": 15,
@@ -305,7 +305,7 @@
       "predicted": "continue",
       "error": null,
       "is_opening": false,
-      "seconds": 9.519
+      "seconds": 11.946
     },
     {
       "conversation_id": 15,
@@ -314,7 +314,7 @@
       "predicted": "end",
       "error": null,
       "is_opening": false,
-      "seconds": 1.911
+      "seconds": 1.829
     }
   ],
   "limitations": [
@@ -324,12 +324,12 @@
   ],
   "provenance": {
     "record_kind": "current_heldout_model_run",
-    "source_report_sha256": "c144f7019a633b1849ec211825bc7713438b6286467b066d7ed584ad378d09b6",
-    "source_git_commit": "50cdd0a0dd017dd44c5ac1e66016c036e4755bf0",
-    "source_code_sha256": "5ecb65dc124a1588c78a00706defccf3af96c9e1f8e990edbc5d409b21993e1c",
-    "api_calls": true,
-    "private_benchmark_transmission_explicitly_approved": true,
+    "source_report_sha256": "6ae70304affe28f1d3ee9ed199981a4c6ac92e3a921dfe0b37aee3cbb4750514",
+    "source_git_commit": "8a6000e3010a935981c9477b8637ad02c250a9b7",
+    "source_code_sha256": "99a42ac308849b8cf93ac65bc82c368997f280c46eb7c848fc6668ea524e99d0",
     "production_calendar_used": false,
-    "retraining": false
+    "retraining": false,
+    "private_benchmark_transmission_explicitly_approved": true,
+    "closure_guard_evaluation": true
   }
 }

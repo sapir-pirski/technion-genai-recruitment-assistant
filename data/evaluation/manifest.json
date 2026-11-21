@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "reviewed_on": "2026-11-20",
+  "reviewed_on": "2026-11-21",
   "dataset_sha256": "94e925f72a43958a90743e477051ae0d053bfb63a11b3f07ffcb4b4126389830",
   "source_snapshot": {
-    "git_head": "50cdd0a0dd017dd44c5ac1e66016c036e4755bf0",
+    "git_head": "8a6000e3010a935981c9477b8637ad02c250a9b7",
     "uncommitted_changes": false,
-    "code_sha256": "5ecb65dc124a1588c78a00706defccf3af96c9e1f8e990edbc5d409b21993e1c",
+    "code_sha256": "99a42ac308849b8cf93ac65bc82c368997f280c46eb7c848fc6668ea524e99d0",
     "files": [
       "TASK.md",
       "app/__init__.py",
@@ -75,7 +75,7 @@
       "streamlit_app/styles.css"
     ],
     "code_sha256_method": "SHA-256 of sorted UTF-8 relative paths, NUL, raw file bytes, NUL, concatenated for every listed file",
-    "captured_on": "2026-11-20",
+    "captured_on": "2026-11-21",
     "captured_before_release_commit": false
   },
   "scope_confirmation": {
@@ -90,8 +90,8 @@
     "public_url": "https://technion-genai-recruitment-assistant.streamlit.app",
     "local_exit_provider": "huggingface",
     "fresh_checkout_default": "huggingface",
-    "cloud_runtime_provider_verified": false,
-    "current_refactor_deployed": false,
+    "cloud_runtime_provider_verified": true,
+    "current_refactor_deployed": true,
     "cloud_artifact_loader_implemented": true,
     "cloud_model_artifact_published": true,
     "cloud_artifact_publication_status": "published_private_verified",
@@ -100,7 +100,13 @@
     "cloud_source_branch": "main",
     "cloud_secret_keys_verified": [
       "OPENAI_API_KEY",
-      "DATABASE_URL"
+      "DATABASE_URL",
+      "EXIT_PROVIDER",
+      "HF_EXIT_REPO_ID",
+      "HF_EXIT_REPO_REVISION",
+      "HF_EXIT_REVISION",
+      "DATABASE_SCHEMA",
+      "HF_TOKEN"
     ],
     "hosted_core_schema_prepared": true,
     "hosted_pdf_chunks": 4,
@@ -126,10 +132,14 @@
     "future_available_slots": 480,
     "last_configured_date": "2026-12-31",
     "calendar_timezone": "Asia/Jerusalem",
-    "source_release_branch": "simplify-assignment-release",
+    "source_release_branch": "main",
     "model_repository_revision": "b743e0bfa41f7253a54dc5ec0abf6f878bed422c",
     "current_main_test_report": "actions_test_current.json",
-    "cloud_runtime_status": "awaiting_repository_read_token"
+    "cloud_runtime_status": "live_verified",
+    "source_commit": "8a6000e3010a935981c9477b8637ad02c250a9b7",
+    "cloud_token_configured": true,
+    "live_verification_report": "deployment_verification.json",
+    "last_verified_at": "2026-11-21T19:52:32.478832+00:00"
   },
   "reports": [
     {
@@ -182,15 +192,21 @@
     },
     {
       "file": "workflow_current.json",
-      "sha256": "5c539c034b8b3bb0cdc7066f268d3b5a72ae7d3f6672fd78981dfc7fc1885b9a",
+      "sha256": "f95ba64d49acd0b30c7a8beab1d53b02e50d06654a41a554e573a224509d47fc",
       "record_kind": "current_controlled_model_replay",
-      "created_at": "2026-11-20T10:18:46.105908+00:00"
+      "created_at": "2026-11-21T17:03:53.787956+00:00"
     },
     {
       "file": "actions_test_current.json",
-      "sha256": "1928c2652df890898481af87857d1bf9a9dc2aa7e16b65a7109b970be43579c9",
+      "sha256": "ddb24609dd9e7e3fd25e979014dcc155d8cd8eae6469e95290a0e4fbf2d963c8",
       "record_kind": "current_heldout_model_run",
-      "created_at": "2026-11-20T12:36:58.760735+02:00"
+      "created_at": "2026-11-21T19:03:56.425485+02:00"
+    },
+    {
+      "file": "deployment_verification.json",
+      "sha256": "3251ef75bd4cdaf533e6ec9dd40229ae4c5ebf7d171d4f61b6432494d837c01e",
+      "record_kind": "live_deployment_verification",
+      "created_at": "2026-11-21T19:52:32.478832+00:00"
     }
   ],
   "limitations": [
@@ -198,6 +214,6 @@
     "Behavior tests use mocked model calls and do not establish model accuracy.",
     "Three test conversations and eleven labeled turns are a small exploratory sample.",
     "Current real-model controlled replay passed 15/15 fictitious steps; this is not held-out Main accuracy or a deployed Cloud check.",
-    "The private model is published and current Main is measured; the required fine-tuned Cloud runtime still needs its repository read token and deployment verification."
+    "Live Cloud checks used fictitious messages and one reversible test booking, which was removed after verification; they do not measure held-out accuracy."
   ]
 }
