@@ -3,7 +3,7 @@
 import hashlib
 import json
 
-from app.evaluation.dataset import redact
+from app.dataset import redact
 from app.guardrails import model_data
 
 LABELS = ("do_not_end", "end")

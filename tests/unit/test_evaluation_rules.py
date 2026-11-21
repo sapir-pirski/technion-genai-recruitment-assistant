@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.config import Settings
-from app.evaluation.dataset import SPLIT_NAMES, build_examples, redact, split_examples
+from app.dataset import SPLIT_NAMES, build_examples, redact, split_examples
 from app.evaluation.judge import QualityCase, assess_case, load_cases
 from app.evaluation.metrics import summarize
 
@@ -254,3 +254,133 @@ def test_huggingface_exit_does_not_construct_or_call_an_openai_exit_client():
     classifier.assert_called_once()
     assert backend.prompt_manifest["exit"]["instruction_role"] is None
     assert backend.policy["exit"]["max_completion_tokens"] is None
+
+
+def test_assignment_defaults_to_the_fine_tuned_exit_provider(monkeypatch):
+    monkeypatch.delenv("EXIT_PROVIDER", raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.exit_provider == "huggingface"
+    assert len(settings.hf_exit_revision) == 64
+
+
+@pytest.mark.parametrize("revision", ["", "main", "unversioned"])
+def test_cloud_model_source_requires_an_immutable_commit(revision):
+    with pytest.raises(ValueError, match="immutable"):
+        Settings(
+            _env_file=None, hf_exit_repo_id="owner/recruitment-exit", hf_exit_repo_revision=revision
+        )
+
+
+def test_pinned_hub_files_are_cached_and_candidate_history_stays_local(
+    tmp_path, monkeypatch, capsys
+):
+    import hashlib
+    from types import SimpleNamespace
+
+    import numpy as np
+    from pydantic import SecretStr
+
+    from app.agents.backends import huggingface
+    from app.fine_tuning.exit_data import INPUT_SHA256, LABELS
+
+    for name in ("model.onnx", "tokenizer.json"):
+        (tmp_path / name).write_bytes(b"fictitious test artifact")
+    files = {
+        name: hashlib.sha256((tmp_path / name).read_bytes()).hexdigest()
+        for name in ("model.onnx", "tokenizer.json")
+    }
+    manifest = {
+        "format_version": 1,
+        "input_sha256": INPUT_SHA256,
+        "labels": list(LABELS),
+        "max_length": 64,
+        "files": files,
+    }
+    (tmp_path / "exit_classifier.json").write_text(json.dumps(manifest))
+    settings = Settings(
+        _env_file=None,
+        exit_provider="huggingface",
+        hf_exit_repo_id="owner/recruitment-exit",
+        hf_exit_repo_revision="a" * 40,
+        hf_exit_revision=files["model.onnx"],
+        hf_token=SecretStr("fictitious-token"),
+    )
+    download = Mock(return_value=str(tmp_path))
+    monkeypatch.setattr("huggingface_hub.snapshot_download", download)
+    huggingface._hub_artifact.cache_clear()
+    tokenizer = Mock()
+    tokenizer.encode.return_value = SimpleNamespace(
+        ids=[1, 2], attention_mask=[1, 1], overflowing=[]
+    )
+    session = Mock()
+    session.run.return_value = [np.asarray([[0.0, 1.0]])]
+    monkeypatch.setattr(
+        huggingface, "_load_local", lambda path, revision: (tokenizer, session, manifest)
+    )
+    try:
+        path = huggingface.artifact_directory(settings)
+        assert huggingface.verify_local_artifact(path, settings.hf_exit_revision) == manifest
+        from app.main import main
+
+        monkeypatch.setattr("app.main.Settings", lambda **kwargs: settings)
+        monkeypatch.setattr("sys.argv", ["recruitment", "doctor", "--verify-exit"])
+        main()
+        verified = json.loads(capsys.readouterr().out)
+        assert verified["exit_artifact_verified"] and verified["exit_provider"] == "huggingface"
+        assert verified["exit_artifact_source"] == "huggingface_hub"
+        assert "fictitious-token" not in json.dumps(verified)
+        for text in ("Private candidate background", "A different private message"):
+            assert huggingface.exit_label(settings, [{"role": "user", "content": text}]) == "end"
+        assert download.call_count == 1
+        assert download.call_args.kwargs["revision"] == "a" * 40
+        assert set(download.call_args.kwargs["allow_patterns"]) == {
+            "model.onnx",
+            "tokenizer.json",
+            "exit_classifier.json",
+        }
+        assert "private" not in str(download.call_args).lower()
+        (tmp_path / "model.onnx").write_bytes(b"corrupted artifact")
+        with pytest.raises(ValueError, match="checksum"):
+            huggingface.verify_local_artifact(path, settings.hf_exit_revision)
+    finally:
+        huggingface._hub_artifact.cache_clear()
+
+
+def test_failed_cloud_model_download_does_not_fall_back_to_prompted_exit(monkeypatch):
+    from app.agents.backends import huggingface
+    from app.agents.backends.openai import OpenAIBackend
+
+    settings = Settings(
+        _env_file=None,
+        openai_api_key="test-only-key",
+        exit_provider="huggingface",
+        hf_exit_repo_id="owner/recruitment-exit",
+        hf_exit_repo_revision="b" * 40,
+    )
+    download = Mock(side_effect=OSError("fictitious private token details"))
+    monkeypatch.setattr("huggingface_hub.snapshot_download", download)
+    huggingface._hub_artifact.cache_clear()
+    try:
+        backend = OpenAIBackend(settings)
+        assert backend.exit is None
+        with pytest.raises(ValueError, match="Cannot fetch") as error:
+            backend.exit_label([{"role": "user", "content": "Tell me more"}])
+        assert "private token details" not in str(error.value)
+    finally:
+        huggingface._hub_artifact.cache_clear()
+
+
+def test_missing_fine_tuned_artifact_is_rejected_before_database_initialization(tmp_path):
+    from app.workflow.service import ChatService
+
+    settings = Settings(
+        _env_file=None,
+        exit_provider="huggingface",
+        openai_api_key="test-only-key",
+        database_url="",
+        hf_exit_local_path=tmp_path,
+    )
+    with patch("app.workflow.service.JobDescriptionRepository") as database:
+        with pytest.raises(FileNotFoundError):
+            ChatService(settings)
+    database.assert_not_called()

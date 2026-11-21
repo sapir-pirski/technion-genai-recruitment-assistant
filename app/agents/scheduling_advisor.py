@@ -1,4 +1,4 @@
-from app.tools.scheduling import scheduling_tool
+from app.scheduling.tools import scheduling_tool
 
 
 def advise(backend, repository, state: dict) -> dict:

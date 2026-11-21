@@ -1,0 +1,584 @@
+{
+  "provider": "openai",
+  "task": "workflow",
+  "evaluation_mode": "controlled_stateful_replay",
+  "created_at": "2026-11-20T10:18:46.105908+00:00",
+  "model_policy": {
+    "main": {
+      "model": "gpt-4o-mini",
+      "reasoning_effort": null,
+      "temperature": 0.0,
+      "max_completion_tokens": 1500
+    },
+    "info": {
+      "model": "gpt-4o-mini",
+      "reasoning_effort": null,
+      "temperature": 0.0,
+      "max_completion_tokens": 1500
+    },
+    "scheduling": {
+      "model": "gpt-4o-mini",
+      "reasoning_effort": null,
+      "temperature": 0.0,
+      "max_completion_tokens": 1500
+    },
+    "info_decision": {
+      "model": "gpt-5-nano",
+      "reasoning_effort": "minimal",
+      "temperature": null,
+      "max_completion_tokens": 1024
+    },
+    "exit": {
+      "provider": "huggingface",
+      "model": "answerdotai/ModernBERT-base (fine-tuned)",
+      "revision": "8bfb0c30560f6069412ff19210678ce1ca6f5c8b08b5db3fb92375c9ff631582",
+      "task": "text-classification",
+      "reasoning_effort": null,
+      "temperature": null,
+      "max_completion_tokens": null
+    },
+    "judge": {
+      "model": "gpt-4o-mini",
+      "reasoning_effort": null,
+      "temperature": 0.0,
+      "max_completion_tokens": 1500
+    }
+  },
+  "prompt_manifest": {
+    "main": {
+      "prompt_name": "main",
+      "prompt_sha256": "40dbd5033437c65af041966dc20967b53d75d6a06dd5d22630388bf0aa90a188",
+      "instruction_role": "system"
+    },
+    "info": {
+      "prompt_name": "info",
+      "prompt_sha256": "47aba6d43fab00e278096eb42ed57c93b33508d530c4302d3f1cd6b364f88e16",
+      "instruction_role": "system"
+    },
+    "scheduling": {
+      "prompt_name": "scheduling",
+      "prompt_sha256": "ccdbf849916e10c7d2bfc83d67009672f2414c905fb08bfe1a902af9bb582058",
+      "instruction_role": "system"
+    },
+    "info_decision": {
+      "prompt_name": "info_decision",
+      "prompt_sha256": "a19a7f66ec50853072209e3ed8648b798ada3f0334e354b084c483453431f070",
+      "instruction_role": "developer"
+    },
+    "exit": {
+      "prompt_name": "exit_classifier",
+      "prompt_sha256": "6e545fb1765afc19bb02cb66cd9649f5b9f5a90b1271c33b707e2cb15b8fd712",
+      "instruction_role": null,
+      "input_format": "exit-history-json-v1: role/content JSON; last 12 messages; 16000 chars; redact phones/emails/credentials; left token truncation",
+      "model": "answerdotai/ModernBERT-base (fine-tuned)",
+      "model_revision": "8bfb0c30560f6069412ff19210678ce1ca6f5c8b08b5db3fb92375c9ff631582"
+    },
+    "judge": {
+      "prompt_name": "judge",
+      "prompt_sha256": "98b1bc087ce105ef3c33c9f49abac1205f010eba4a9adb2bbec6dd27a1db1e30",
+      "instruction_role": "system"
+    }
+  },
+  "input_sha256": "f4fdd75b7ce5bf3d8a4b79ea7d2eb7dc0b192ab5dcf04dc1fda9f7b3ab9dbb34",
+  "summary": {
+    "cases": 6,
+    "steps": 15,
+    "passed_steps": 15,
+    "passed_cases": 6,
+    "execution_failures": 0
+  },
+  "rows": [
+    {
+      "case_id": "mixed_information_and_booking",
+      "step": 1,
+      "passed": true,
+      "checks": {
+        "action": true,
+        "closed": true,
+        "bookings": true,
+        "offers": true,
+        "maximum_offers": true,
+        "alternative_count": true,
+        "preferred_date": true,
+        "preference_origin_time": true,
+        "required_date": true,
+        "citations": true,
+        "closure_reason": true,
+        "receipt": true,
+        "scheduled_closure_has_receipt": true
+      },
+      "actual": {
+        "action": "schedule",
+        "closed": false,
+        "bookings": 0,
+        "offers": 3,
+        "closure_reason": null,
+        "cited_answer": true,
+        "alternative_count": 0,
+        "preferred_date": null,
+        "preference_origin_time": null
+      },
+      "error": null
+    },
+    {
+      "case_id": "mixed_information_and_booking",
+      "step": 2,
+      "passed": true,
+      "checks": {
+        "action": true,
+        "closed": true,
+        "bookings": true,
+        "offers": true,
+        "maximum_offers": true,
+        "alternative_count": true,
+        "preferred_date": true,
+        "preference_origin_time": true,
+        "required_date": true,
+        "citations": true,
+        "closure_reason": true,
+        "receipt": true,
+        "scheduled_closure_has_receipt": true
+      },
+      "actual": {
+        "action": "continue",
+        "closed": false,
+        "bookings": 1,
+        "offers": 0,
+        "closure_reason": null,
+        "cited_answer": true,
+        "alternative_count": 0,
+        "preferred_date": null,
+        "preference_origin_time": null
+      },
+      "error": null
+    },
+    {
+      "case_id": "mixed_information_and_booking",
+      "step": 3,
+      "passed": true,
+      "checks": {
+        "action": true,
+        "closed": true,
+        "bookings": true,
+        "offers": true,
+        "maximum_offers": true,
+        "alternative_count": true,
+        "preferred_date": true,
+        "preference_origin_time": true,
+        "required_date": true,
+        "citations": true,
+        "closure_reason": true,
+        "receipt": true,
+        "scheduled_closure_has_receipt": true
+      },
+      "actual": {
+        "action": "end",
+        "closed": true,
+        "bookings": 1,
+        "offers": 0,
+        "closure_reason": "scheduled",
+        "cited_answer": false,
+        "alternative_count": 0,
+        "preferred_date": null,
+        "preference_origin_time": null
+      },
+      "error": null
+    },
+    {
+      "case_id": "ambiguous_acceptance_then_confirmation",
+      "step": 1,
+      "passed": true,
+      "checks": {
+        "action": true,
+        "closed": true,
+        "bookings": true,
+        "offers": true,
+        "maximum_offers": true,
+        "alternative_count": true,
+        "preferred_date": true,
+        "preference_origin_time": true,
+        "required_date": true,
+        "citations": true,
+        "closure_reason": true,
+        "receipt": true,
+        "scheduled_closure_has_receipt": true
+      },
+      "actual": {
+        "action": "schedule",
+        "closed": false,
+        "bookings": 0,
+        "offers": 3,
+        "closure_reason": null,
+        "cited_answer": false,
+        "alternative_count": 0,
+        "preferred_date": null,
+        "preference_origin_time": null
+      },
+      "error": null
+    },
+    {
+      "case_id": "ambiguous_acceptance_then_confirmation",
+      "step": 2,
+      "passed": true,
+      "checks": {
+        "action": true,
+        "closed": true,
+        "bookings": true,
+        "offers": true,
+        "maximum_offers": true,
+        "alternative_count": true,
+        "preferred_date": true,
+        "preference_origin_time": true,
+        "required_date": true,
+        "citations": true,
+        "closure_reason": true,
+        "receipt": true,
+        "scheduled_closure_has_receipt": true
+      },
+      "actual": {
+        "action": "schedule",
+        "closed": false,
+        "bookings": 0,
+        "offers": 3,
+        "closure_reason": null,
+        "cited_answer": false,
+        "alternative_count": 0,
+        "preferred_date": null,
+        "preference_origin_time": null
+      },
+      "error": null
+    },
+    {
+      "case_id": "ambiguous_acceptance_then_confirmation",
+      "step": 3,
+      "passed": true,
+      "checks": {
+        "action": true,
+        "closed": true,
+        "bookings": true,
+        "offers": true,
+        "maximum_offers": true,
+        "alternative_count": true,
+        "preferred_date": true,
+        "preference_origin_time": true,
+        "required_date": true,
+        "citations": true,
+        "closure_reason": true,
+        "receipt": true,
+        "scheduled_closure_has_receipt": true
+      },
+      "actual": {
+        "action": "end",
+        "closed": true,
+        "bookings": 1,
+        "offers": 0,
+        "closure_reason": "scheduled",
+        "cited_answer": false,
+        "alternative_count": 0,
+        "preferred_date": null,
+        "preference_origin_time": null
+      },
+      "error": null
+    },
+    {
+      "case_id": "explicit_opt_out",
+      "step": 1,
+      "passed": true,
+      "checks": {
+        "action": true,
+        "closed": true,
+        "bookings": true,
+        "offers": true,
+        "maximum_offers": true,
+        "alternative_count": true,
+        "preferred_date": true,
+        "preference_origin_time": true,
+        "required_date": true,
+        "citations": true,
+        "closure_reason": true,
+        "receipt": true,
+        "scheduled_closure_has_receipt": true
+      },
+      "actual": {
+        "action": "end",
+        "closed": true,
+        "bookings": 0,
+        "offers": 0,
+        "closure_reason": "opt_out",
+        "cited_answer": false,
+        "alternative_count": 0,
+        "preferred_date": null,
+        "preference_origin_time": null
+      },
+      "error": null
+    },
+    {
+      "case_id": "information_then_disinterest",
+      "step": 1,
+      "passed": true,
+      "checks": {
+        "action": true,
+        "closed": true,
+        "bookings": true,
+        "offers": true,
+        "maximum_offers": true,
+        "alternative_count": true,
+        "preferred_date": true,
+        "preference_origin_time": true,
+        "required_date": true,
+        "citations": true,
+        "closure_reason": true,
+        "receipt": true,
+        "scheduled_closure_has_receipt": true
+      },
+      "actual": {
+        "action": "continue",
+        "closed": false,
+        "bookings": 0,
+        "offers": 0,
+        "closure_reason": null,
+        "cited_answer": true,
+        "alternative_count": 0,
+        "preferred_date": null,
+        "preference_origin_time": null
+      },
+      "error": null
+    },
+    {
+      "case_id": "information_then_disinterest",
+      "step": 2,
+      "passed": true,
+      "checks": {
+        "action": true,
+        "closed": true,
+        "bookings": true,
+        "offers": true,
+        "maximum_offers": true,
+        "alternative_count": true,
+        "preferred_date": true,
+        "preference_origin_time": true,
+        "required_date": true,
+        "citations": true,
+        "closure_reason": true,
+        "receipt": true,
+        "scheduled_closure_has_receipt": true
+      },
+      "actual": {
+        "action": "end",
+        "closed": true,
+        "bookings": 0,
+        "offers": 0,
+        "closure_reason": "opt_out",
+        "cited_answer": false,
+        "alternative_count": 0,
+        "preferred_date": null,
+        "preference_origin_time": null
+      },
+      "error": null
+    },
+    {
+      "case_id": "partial_availability_and_hard_limits",
+      "step": 1,
+      "passed": true,
+      "checks": {
+        "action": true,
+        "closed": true,
+        "bookings": true,
+        "offers": true,
+        "maximum_offers": true,
+        "alternative_count": true,
+        "preferred_date": true,
+        "preference_origin_time": true,
+        "required_date": true,
+        "citations": true,
+        "closure_reason": true,
+        "receipt": true,
+        "scheduled_closure_has_receipt": true
+      },
+      "actual": {
+        "action": "schedule",
+        "closed": false,
+        "bookings": 0,
+        "offers": 3,
+        "closure_reason": null,
+        "cited_answer": false,
+        "alternative_count": 1,
+        "preferred_date": "2030-01-08",
+        "preference_origin_time": "2030-01-07T08:00:00+00:00"
+      },
+      "error": null
+    },
+    {
+      "case_id": "partial_availability_and_hard_limits",
+      "step": 2,
+      "passed": true,
+      "checks": {
+        "action": true,
+        "closed": true,
+        "bookings": true,
+        "offers": true,
+        "maximum_offers": true,
+        "alternative_count": true,
+        "preferred_date": true,
+        "preference_origin_time": true,
+        "required_date": true,
+        "citations": true,
+        "closure_reason": true,
+        "receipt": true,
+        "scheduled_closure_has_receipt": true
+      },
+      "actual": {
+        "action": "schedule",
+        "closed": false,
+        "bookings": 0,
+        "offers": 2,
+        "closure_reason": null,
+        "cited_answer": false,
+        "alternative_count": 0,
+        "preferred_date": "2030-01-08",
+        "preference_origin_time": "2030-01-07T08:00:01+00:00"
+      },
+      "error": null
+    },
+    {
+      "case_id": "partial_availability_and_hard_limits",
+      "step": 3,
+      "passed": true,
+      "checks": {
+        "action": true,
+        "closed": true,
+        "bookings": true,
+        "offers": true,
+        "maximum_offers": true,
+        "alternative_count": true,
+        "preferred_date": true,
+        "preference_origin_time": true,
+        "required_date": true,
+        "citations": true,
+        "closure_reason": true,
+        "receipt": true,
+        "scheduled_closure_has_receipt": true
+      },
+      "actual": {
+        "action": "schedule",
+        "closed": false,
+        "bookings": 0,
+        "offers": 3,
+        "closure_reason": null,
+        "cited_answer": false,
+        "alternative_count": 0,
+        "preferred_date": null,
+        "preference_origin_time": null
+      },
+      "error": null
+    },
+    {
+      "case_id": "relative_date_across_week_boundary",
+      "step": 1,
+      "passed": true,
+      "checks": {
+        "action": true,
+        "closed": true,
+        "bookings": true,
+        "offers": true,
+        "maximum_offers": true,
+        "alternative_count": true,
+        "preferred_date": true,
+        "preference_origin_time": true,
+        "required_date": true,
+        "citations": true,
+        "closure_reason": true,
+        "receipt": true,
+        "scheduled_closure_has_receipt": true
+      },
+      "actual": {
+        "action": "schedule",
+        "closed": false,
+        "bookings": 0,
+        "offers": 3,
+        "closure_reason": null,
+        "cited_answer": false,
+        "alternative_count": 0,
+        "preferred_date": "2030-01-11",
+        "preference_origin_time": "2030-01-06T23:00:00+00:00"
+      },
+      "error": null
+    },
+    {
+      "case_id": "relative_date_across_week_boundary",
+      "step": 2,
+      "passed": true,
+      "checks": {
+        "action": true,
+        "closed": true,
+        "bookings": true,
+        "offers": true,
+        "maximum_offers": true,
+        "alternative_count": true,
+        "preferred_date": true,
+        "preference_origin_time": true,
+        "required_date": true,
+        "citations": true,
+        "closure_reason": true,
+        "receipt": true,
+        "scheduled_closure_has_receipt": true
+      },
+      "actual": {
+        "action": "schedule",
+        "closed": false,
+        "bookings": 0,
+        "offers": 3,
+        "closure_reason": null,
+        "cited_answer": false,
+        "alternative_count": 0,
+        "preferred_date": "2030-01-11",
+        "preference_origin_time": "2030-01-06T23:00:00+00:00"
+      },
+      "error": null
+    },
+    {
+      "case_id": "relative_date_across_week_boundary",
+      "step": 3,
+      "passed": true,
+      "checks": {
+        "action": true,
+        "closed": true,
+        "bookings": true,
+        "offers": true,
+        "maximum_offers": true,
+        "alternative_count": true,
+        "preferred_date": true,
+        "preference_origin_time": true,
+        "required_date": true,
+        "citations": true,
+        "closure_reason": true,
+        "receipt": true,
+        "scheduled_closure_has_receipt": true
+      },
+      "actual": {
+        "action": "schedule",
+        "closed": false,
+        "bookings": 0,
+        "offers": 3,
+        "closure_reason": null,
+        "cited_answer": false,
+        "alternative_count": 0,
+        "preferred_date": "2030-01-18",
+        "preference_origin_time": "2030-01-07T01:00:01+00:00"
+      },
+      "error": null
+    }
+  ],
+  "limitations": [
+    "Fictitious controlled cases; not historical benchmark accuracy.",
+    "The booking replay uses the same Main/three-advisor workflow as interactive chat."
+  ],
+  "provenance": {
+    "record_kind": "current_controlled_model_replay",
+    "source_report_sha256": "6fb054710a45ea670f44ea5fc79645bbf612bf6adc7b46ffbc98404996bd3a14",
+    "private_benchmark_used": false,
+    "calendar": "disposable local PostgreSQL schema",
+    "real_model_calls": true,
+    "production_bookings_modified": false
+  }
+}

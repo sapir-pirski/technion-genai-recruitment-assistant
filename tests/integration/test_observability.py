@@ -15,12 +15,13 @@ from app.agents.backends.openai import OpenAIBackend
 from app.config import Settings
 from app.observability.logging import JsonFormatter
 from app.observability.tracing import EmbeddingClient
-from app.service import ChatService
-from app.storage.models import Booking, ConversationMessage, TraceSpan
+from app.scheduling.models import Booking
+from app.storage.models import ConversationMessage
+from app.workflow.service import ChatService
 
 
 def test_history_export_failed_turn_and_replay(benchmark_dataset, service, now, capfd):
-    original_benchmark = benchmark_dataset.load_conversations()
+    original_benchmark = benchmark_dataset.read_bytes()
     private_text = "private candidate history"
     service.backend.plan.return_value = service.backend.plan.return_value.model_copy(
         update={"info_question": "requirements"}
@@ -29,6 +30,7 @@ def test_history_export_failed_turn_and_replay(benchmark_dataset, service, now, 
         return_value=[{"id": "chunk-1", "text": "private source excerpt"}]
     )
     first = service.turn("audit", private_text, request_id="first", reference_time=now)
+    first_trace = list(service.traces.last_trace)
     first_calls = service.backend.plan.call_count
     assert service.turn("audit", private_text, request_id="first", reference_time=now) == first
     assert service.backend.plan.call_count == first_calls
@@ -41,7 +43,7 @@ def test_history_export_failed_turn_and_replay(benchmark_dataset, service, now, 
         messages = list(
             session.scalars(select(ConversationMessage).order_by(ConversationMessage.sequence_no))
         )
-        spans = list(session.scalars(select(TraceSpan)))
+        spans = first_trace + service.traces.last_trace
         assert len(messages) == 4
         assert messages[0].occurred_at == now
         roots = [item for item in spans if item.parent_span_id is None]
@@ -69,7 +71,7 @@ def test_history_export_failed_turn_and_replay(benchmark_dataset, service, now, 
     assert all(item["label"] is None for item in export[0]["turns"])
     assert export[0]["turns"][1]["predicted_action"] == first.action
     assert service.settings.conversation_export_path.stat().st_mode & 0o777 == 0o600
-    assert benchmark_dataset.load_conversations() == original_benchmark
+    assert benchmark_dataset.read_bytes() == original_benchmark
     diagnostics = capfd.readouterr().err
     assert private_text not in diagnostics and "secret exception contents" not in diagnostics
     assert all(isinstance(json.loads(line), dict) for line in diagnostics.splitlines())
@@ -104,21 +106,13 @@ def test_concurrent_workers_deduplicate_and_export_every_conversation(backend, n
         assert len(export) == 3 and all(len(row["turns"]) == 2 for row in export)
         with Session(workers[0].registry.engine) as session:
             assert session.scalar(select(func.count()).select_from(ConversationMessage)) == 6
-            assert (
-                session.scalar(
-                    select(func.count())
-                    .select_from(TraceSpan)
-                    .where(TraceSpan.parent_span_id.is_(None))
-                )
-                == 3
-            )
+
     finally:
         for worker in workers:
             worker.close()
 
 
-def test_diagnostics_failures_preserve_booking_and_durable_receipt(service, now, capfd):
-    target = "app.observability.tracing.Session"
+def test_export_failure_preserves_booking_and_durable_receipt(service, now, capfd):
     service.backend.plan.return_value = service.backend.plan.return_value.model_copy(
         update={"scheduling_needed": True}
     )
@@ -126,7 +120,9 @@ def test_diagnostics_failures_preserve_booking_and_durable_receipt(service, now,
     arguments = dict(
         request_id="confirm", reference_time=now, selected_slot_id=offered.offered_slots[0]["id"]
     )
-    with patch(target, side_effect=OSError("secret error details")):
+    with patch.object(
+        service.conversations, "export_json", side_effect=OSError("secret error details")
+    ):
         booked = service.turn("booking", "Confirm", **arguments)
     assert booked.booking and booked.conversation_status == "closed"
     calls = service.backend.plan.call_count
@@ -191,40 +187,30 @@ def test_api_usage_is_preserved_before_parsing_and_missing_counts_stay_null(serv
             model=settings.chat_model, api_key="test-only-key", http_client=client
         )
         try:
-            with service.traces.trace(None, "usage-test", component="evaluation"):
-                with Session(service.registry.engine) as session:
-                    active = session.scalar(
-                        select(TraceSpan).where(TraceSpan.request_id == "usage-test")
-                    )
-                    assert active.status == "running" and active.finished_at is None
+            with service.traces.trace(None, "usage-test", component="evaluation") as active:
+                assert active.status == "running" and active.finished_at is None
                 backend.plan({"messages": [], "reference_time": now.isoformat(), "timezone": "UTC"})
         except Exception:
             if case != "parse_failure":
                 raise
         else:
             assert case != "parse_failure"
+    usage_trace = list(service.traces.last_trace)
     with service.traces.trace(None, "embedding-test", component="ingestion"):
         EmbeddingClient(
             Mock(create=Mock(return_value={"usage": {"prompt_tokens": 8, "total_tokens": 8}})),
             "text-embedding-3-small",
         ).create(input=["test"])
-    with Session(service.registry.engine) as session:
-        model = session.scalar(select(TraceSpan).where(TraceSpan.component == "llm"))
-        assert model.input_tokens == (None if case == "missing" else 100)
-        assert model.output_tokens == (None if case == "missing" else 12)
-        assert model.cached_input_tokens == (None if case == "missing" else 20)
-        assert model.status == ("failed" if case == "parse_failure" else "complete")
-        assert model.attributes["prompt_name"] == "main"
-        assert (
-            model.attributes["prompt_sha256"] == hashlib.sha256(prompt("main").encode()).hexdigest()
-        )
-        assert model.attributes["instruction_role"] == "system"
-        assert prompt("main") not in json.dumps(model.attributes)
-        root = session.scalar(
-            select(TraceSpan).where(
-                TraceSpan.request_id == "usage-test", TraceSpan.parent_span_id.is_(None)
-            )
-        )
-        assert root.input_tokens is None
-        embedding = session.scalar(select(TraceSpan).where(TraceSpan.component == "embedding"))
-        assert embedding.input_tokens == 8 and embedding.output_tokens is None
+    model = next(item for item in usage_trace if item.component == "llm")
+    assert model.input_tokens == (None if case == "missing" else 100)
+    assert model.output_tokens == (None if case == "missing" else 12)
+    assert model.cached_input_tokens == (None if case == "missing" else 20)
+    assert model.status == ("failed" if case == "parse_failure" else "complete")
+    assert model.attributes["prompt_name"] == "main"
+    assert model.attributes["prompt_sha256"] == hashlib.sha256(prompt("main").encode()).hexdigest()
+    assert model.attributes["instruction_role"] == "system"
+    assert prompt("main") not in json.dumps(model.attributes)
+    root = next(item for item in usage_trace if item.parent_span_id is None)
+    assert root.input_tokens is None
+    embedding = next(item for item in service.traces.last_trace if item.component == "embedding")
+    assert embedding.input_tokens == 8 and embedding.output_tokens is None
