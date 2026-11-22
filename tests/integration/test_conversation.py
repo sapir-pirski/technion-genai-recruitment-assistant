@@ -274,29 +274,39 @@ def test_exit_completion_cannot_close_without_a_booking_receipt(service, now):
     )
     assert reply.action == "continue" and reply.conversation_status == "active"
     assert reply.closure_reason is None and reply.booking is None
+    assert "end the recruitment conversation" not in reply.response
+    assert not service.state("unverified-completion")["awaiting_opt_out_confirmation"]
+    continued = service.turn("unverified-completion", "Yes, please.", reference_time=now)
+    assert continued.action == "continue" and not continued.closure_reason
+    # A yes only authorizes closure when this particular conversation is awaiting
+    # Main's confirmation of uncertain candidate withdrawal, not an Exit label.
+    plan_turn(service, stop_requested=True)
+    uncertain = service.turn("uncertain-yes", "I'm unsure about continuing", reference_time=now)
     assert (
-        reply.response
+        uncertain.response
         == "Do you want to end the recruitment conversation? Please answer yes or no."
     )
-    assert service.state("unverified-completion")["awaiting_opt_out_confirmation"]
-    assert not reply.suggested_questions
-    # A yes only authorizes closure when this particular conversation is awaiting
-    # the application's own confirmation question.
-    confirmed = service.turn("unverified-completion", "Yes, please.", reference_time=now)
+    assert not uncertain.suggested_questions
+    assert service.state("uncertain-yes")["awaiting_opt_out_confirmation"]
+    plan_turn(service, stop_requested=False)
+    confirmed = service.turn("uncertain-yes", "Yes, please.", reference_time=now)
     assert confirmed.action == "end" and confirmed.closure_reason == "opt_out"
-    assert not service.state("unverified-completion")["awaiting_opt_out_confirmation"]
+    assert not service.state("uncertain-yes")["awaiting_opt_out_confirmation"]
     for suffix, answer in (("no", "No"), ("new-topic", "What experience does this role require?")):
         cid = "uncertain-" + suffix
+        plan_turn(service, stop_requested=True)
         service.turn(cid, "I'm unsure about my next step", reference_time=now)
+        plan_turn(service, stop_requested=False)
         continued = service.turn(cid, answer, reference_time=now)
         assert continued.conversation_status == "active" and not continued.closure_reason
         assert "Please answer yes or no" not in continued.response
         assert not service.state(cid)["awaiting_opt_out_confirmation"]
     plan_turn(service, scheduling_needed=True)
     offered = service.turn("uncertain-slot", "Show interview times", reference_time=now)
-    plan_turn(service, scheduling_needed=False)
+    plan_turn(service, scheduling_needed=False, stop_requested=True)
     service.turn("uncertain-slot", "I am unsure about continuing", reference_time=now)
     assert service.state("uncertain-slot")["awaiting_opt_out_confirmation"]
+    plan_turn(service, stop_requested=False)
     # Clicking an appointment is booking consent, even if the text is just yes.
     booked = service.turn(
         "uncertain-slot",

@@ -313,6 +313,11 @@ limits stop loops. Main owns the final action. Python composition and output gua
 preserve citations, booking receipts, and the distinction between opt-out and
 completed scheduling.
 
+Each Main call identifies the current candidate message and whether it starts a new
+turn or reviews advisor results. Earlier answered requests remain context. Personal
+background questions use grounded candidate facts rather than repeating job advice
+or treating an earlier interview offer as a new scheduling request.
+
 | Component | Responsibility | Model/tool |
 |---|---|---|
 | Main | Choose advisors, review advice, and coordinate the next action. | GPT-4o mini |
@@ -350,6 +355,8 @@ completed scheduling.
 - Closure confirmation is scoped to its conversation. Choosing an offered appointment
   remains booking consent. A confirmed interview requires a durable booking receipt;
   a pure thank-you after booking closes with the `scheduled` reason.
+  An Exit label alone cannot trigger a closure question on an ordinary request;
+  Main must identify withdrawal intent before asking for clarification.
 - Request IDs, conversation locks, durable response receipts, and graph checkpoints
   support retries without repeating completed model calls or bookings. Interrupted
   profile intake and follow-up generation resume from completed checkpoints.
@@ -566,7 +573,7 @@ from action accuracy and are not a substitute for human review.
 
 ## Testing and live verification
 
-Verified on **November 22, 2026**. The suite contains **127 Python tests across
+Verified on **November 22, 2026**. The suite contains **128 Python tests across
 13 modules**, plus **five browser-control tests**. Integration model/HTTP calls are
 mocked; live-model scenarios below are separate runs with fictitious messages.
 Closure, candidate-reset, qualification and scope checks use this checkout against an isolated database with the
@@ -574,7 +581,7 @@ configured Main model and fine-tuned Exit classifier. Screenshots show the hoste
 
 | Verification layer | Recorded result | What it establishes |
 |---|---|---|
-| Python suite | **127 / 127 passed** | Deterministic unit and isolated integration checks. |
+| Python suite | **128 / 128 passed** | Deterministic unit and isolated integration checks. |
 | Browser controls | **5 / 5 passed** | Printing, recording/download, errors, cancellation, and cleanup. |
 | Live-model scenarios | Separate focused checks | Behavior on fictitious questions; distinct from benchmark accuracy. |
 
@@ -583,13 +590,14 @@ configured Main model and fine-tuned Exit classifier. Screenshots show the hoste
 
 | Check | Result and scope |
 |---|---|
-| Automated Python suite | 127/127 passed against disposable PostgreSQL databases. |
+| Automated Python suite | 128/128 passed against disposable PostgreSQL databases. |
 | Browser control suite | Five checks cover printing, recording/download, cancellation, errors, and capture cleanup. |
 | Live-model closure scenarios | 24/24 focused scenarios and six additional checks passed, including polite declines, privacy refusals, negation, quotations, hypotheticals, slot rejection, and booking acknowledgments. Ambiguous withdrawals were confirmed explicitly. |
 | Live job questions | Nine focused live rechecks passed against the complete assignment PDF: required/preferred coverage, typo handling, database obligation, preferred technologies and mixed salary/booking requests. |
 | Browser profile/reset flow | Fictitious PDF, introduction and LinkedIn inputs cleared on New conversation; the original profile stayed saved. The next conversation had no reused sources or candidate facts. |
 | Unspecified facts | Salary and guaranteed remote-work questions referred to the recruiter rather than inventing terms. |
 | Off-topic and mixed requests | 17 real-model scenarios passed: brief weather/recipe/unrelated-code redirects, relevant technical questions, mixed role/calendar requests, preserved offers, booking completion, opt-out and privacy controls. |
+| Current-turn routing | Five focused live-model cases passed for personal background, identity, calendar, job facts, and off-topic questions after earlier answered requests; the profile case also checks advisor review. |
 | Security requests | Credential, hidden-prompt, and private-candidate disclosure requests received a refusal and stayed open in the focused check. Legitimate questions about job credentials continued normally. No configured secrets were disclosed or unauthorized booking created. |
 | Untrusted inputs | A fake credential, malicious profile instructions, and a corrupt PDF were exercised. These checks supplement deterministic guardrail tests. |
 | Scheduling | Availability, mixed job/time questions, ambiguous acceptance, invalid slot selection, rejection, and explicit confirmation exercised in isolation. |

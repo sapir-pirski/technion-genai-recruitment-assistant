@@ -15,6 +15,30 @@ def sections(*, experience=(), skills=(), name=None):
     )
 
 
+def test_exit_false_alarm_does_not_replace_a_grounded_profile_answer(service, now):
+    introduction = "Sam Example. Three years of Python experience."
+    service.backend.extract_profile.return_value = sections(
+        name="Sam Example", experience=["Three years of Python experience."], skills=["Python"]
+    )
+    service.backend.plan.return_value = service.backend.plan.return_value.model_copy(
+        update={"next_question": "You are Sam Example and have three years of Python experience."}
+    )
+    service.backend.exit_label.return_value = "end"
+    reply = service.turn(
+        "profile-exit-alarm",
+        "What is my name and Python experience?",
+        context_inputs={"introduction": introduction},
+        reference_time=now,
+    )
+    assert not reply.error and reply.action == "continue" and reply.conversation_status == "active"
+    assert "Sam Example" in reply.response and "three years" in reply.response
+    assert "end the recruitment" not in reply.response
+    assert not service.state("profile-exit-alarm")["awaiting_opt_out_confirmation"]
+    service.backend.exit_label.assert_called_once()
+    service.backend.info.assert_not_called()
+    service.backend.schedule.assert_not_called()
+
+
 def test_all_sources_are_automatic_idempotent_and_not_fake_messages(service, now):
     values = {
         "introduction": "3.5 years of Python experience. Skills: Python, SQL",

@@ -1,5 +1,6 @@
 import hashlib
 import html
+import json
 import logging
 import re
 import sys
@@ -17,6 +18,7 @@ if str(ROOT) not in sys.path:
 
 import streamlit as st
 
+from app.agents.backends.common import prompt_manifest
 from app.config import Settings
 from app.ingestion.description import description_html
 from app.ingestion.models import DEFAULT_JOB_ID
@@ -575,6 +577,7 @@ def render():
         settings.model_dump_json().encode()
         + settings.openai_api_key.get_secret_value().encode()
         + settings.hf_token.get_secret_value().encode()
+        + json.dumps(prompt_manifest(settings), sort_keys=True).encode()
     ).hexdigest()
     try:
         with st.spinner("Loading the assistant…"):

@@ -379,11 +379,7 @@ def compose(state: dict) -> dict:
             conflicts = state.get("candidate_profile", {}).get("conflicts", [])
             fields = {item["field"] for item in conflicts}
             awaiting_confirmation = bool(
-                (
-                    intent.get("stop_requested")
-                    or intent.get("closure_uncertain")
-                    or state.get("exit_label") == "end"
-                )
+                (intent.get("stop_requested") or intent.get("closure_uncertain"))
                 and not state.get("awaiting_opt_out_confirmation")
                 and not booking
                 and not conflicts
