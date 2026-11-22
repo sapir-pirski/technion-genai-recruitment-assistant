@@ -7,13 +7,14 @@ import pytest
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
-from app.config import DEFAULT_JOB_ID, Settings
+from app.config import Settings
+from app.graph.builder import build_graph
+from app.ingestion.models import DEFAULT_JOB_ID
+from app.ingestion.registry import JobRegistry
 from app.main import main
-from app.rag.repository import JobDescriptionRepository
-from app.scheduling.models import Booking, Slot
-from app.scheduling.repository import BookingConflict
-from app.scheduling.tools import scheduling_tool
-from app.workflow.graph import build_graph
+from app.storage.models import Booking, Slot, TraceSpan
+from app.storage.schedule_repository import BookingConflict
+from app.tools.scheduling import scheduling_tool
 
 
 def test_booking_is_idempotent_and_removes_availability(repository, now):
@@ -104,6 +105,7 @@ def test_relative_preference_survives_checkpoint_and_week_boundary(service, cale
         service.repository,
         service.retriever,
         service.graph.checkpointer,
+        service.profiles,
     )
     calendar_request["period"] = "morning"
     calendar_request["time_text"] = "09:00"  # Model repeats an offered time; retain all mornings.
@@ -128,7 +130,7 @@ def test_relative_preference_survives_checkpoint_and_week_boundary(service, cale
 
 @pytest.fixture
 def calendar_repository(repository):
-    registry = JobDescriptionRepository(Settings(_env_file=None))
+    registry = JobRegistry(Settings(_env_file=None))
     with Session(repository.engine) as session, session.begin():
         session.execute(update(Slot).values(duration_minutes=30))
     yield repository
@@ -187,7 +189,7 @@ def test_sql_time_filters_run_before_limit_and_use_candidate_timezone(calendar_r
 def test_calendar_cli_preview_add_and_status_use_storage_without_models(
     calendar_repository, now, monkeypatch, capsys
 ):
-    monkeypatch.setattr("app.scheduling.calendar.datetime", Mock(now=Mock(return_value=now)))
+    monkeypatch.setattr("app.calendar.datetime", Mock(now=Mock(return_value=now)))
     arguments = [
         "recruitment",
         "calendar",
@@ -231,12 +233,22 @@ def test_calendar_cli_preview_add_and_status_use_storage_without_models(
     status = json.loads(capsys.readouterr().out)
     assert status["last_configured_date"] == "2026-11-18" and status["future_available"] == 5
     monkeypatch.setattr(
-        "app.scheduling.calendar.datetime", Mock(now=Mock(return_value=now + timedelta(days=31)))
+        "app.calendar.datetime", Mock(now=Mock(return_value=now + timedelta(days=31)))
     )
     main()
     expired = json.loads(capsys.readouterr().out)
     assert expired["status"] == "expired" and expired["future_available"] == 0
     assert expired["past_unbooked"] == 5 and expired["next_slots"] == []
+    with Session(calendar_repository.engine) as session:
+        spans = list(session.scalars(select(TraceSpan).where(TraceSpan.component == "calendar")))
+        assert any(
+            item.operation == "add_availability" and item.attributes.get("outcome") == "added"
+            for item in spans
+        )
+        assert all(
+            item.model is None and item.input_tokens is None and item.conversation_id is None
+            for item in spans
+        )
 
 
 def test_calendar_rejects_past_additions_without_mutating_slots(calendar_repository, now):

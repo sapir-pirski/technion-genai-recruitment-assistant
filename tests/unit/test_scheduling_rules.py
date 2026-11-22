@@ -3,8 +3,8 @@ from datetime import UTC, date, datetime, time
 import pytest
 
 from app.agents.backends.common import explicit_stop
-from app.scheduling.calendar import availability_times
-from app.scheduling.dates import parse_date, parse_time
+from app.calendar import availability_times
+from app.tools.dates import parse_date, parse_time
 
 
 def window(**changes):

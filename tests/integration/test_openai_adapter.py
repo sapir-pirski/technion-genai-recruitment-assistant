@@ -9,7 +9,7 @@ from langchain_openai import ChatOpenAI
 from app.agents.backends.common import OPERATION_PROMPTS, prompt_spec
 from app.agents.backends.openai import OpenAIBackend
 from app.config import Settings
-from app.scheduling.tools import scheduling_tool
+from app.tools.scheduling import scheduling_tool
 
 
 def test_function_call_executes_validated_calendar_tool(repository, now):
@@ -77,6 +77,16 @@ def test_function_call_executes_validated_calendar_tool(repository, now):
     assert result["decision"] == "schedule"
     assert seen[0]["tool_choice"] == "auto"
     assert seen[0]["tools"][0]["function"]["name"] == "manage_interview"
+    definition = seen[0]["tools"][0]["function"]
+    assert definition["strict"] is True
+    assert definition["parameters"]["additionalProperties"] is False
+    assert set(definition["parameters"]["required"]) == {
+        "date_text",
+        "time_text",
+        "period",
+        "selected_slot_id",
+        "accepts_slot",
+    }
     assert seen[0]["parallel_tool_calls"] is False
     assert seen[0]["messages"][0]["role"] == "system"
     assert (
@@ -128,8 +138,8 @@ def test_scheduling_can_decline_without_querying_calendar(repository, now):
     [
         ("main", None),
         (
-            "info_decision",
-            {"decision": "info_not_needed", "question": None},
+            "profile_extraction",
+            {"name": None, "experience": [], "skills": ["Python"], "education": [], "projects": []},
         ),
     ],
 )
@@ -169,9 +179,38 @@ def test_operation_selects_model_and_sends_compatible_bounded_parameters(
         state = {"messages": [], "reference_time": now.isoformat(), "timezone": "UTC"}
         calls = {
             "main": lambda: adapter.plan(state),
-            "info_decision": lambda: adapter.info_decision(state),
+            "profile_extraction": lambda: adapter.extract_profile("Python"),
         }
         calls[operation]()
+        if operation == "main":
+            seen.clear()
+            # Chat revisions use the existing non-reasoning budget model and system prompt.
+            content = json.dumps(
+                {
+                    "facts": {
+                        "name": None,
+                        "experience": [],
+                        "skills": [],
+                        "education": [],
+                        "projects": [],
+                    },
+                    "superseded_fact_ids": [],
+                    "confirmed_fact_ids": [],
+                }
+            )
+            adapter.extract_chat_profile({"latest_message": "I use Python."})
+            assert seen[0]["model"] == settings.model_for("chat_profile") == settings.chat_model
+            assert seen[0]["messages"][0]["role"] == "system"
+            assert seen[0]["max_completion_tokens"] == settings.max_output_tokens
+            assert "reasoning_effort" not in seen[0]
+            seen.clear()
+            content = json.dumps({"decision": "info_not_needed", "question": None})
+            adapter.info_decision(state)
+            assert seen[0]["reasoning_effort"] == "minimal"
+            assert seen[0]["max_completion_tokens"] == 1024
+            seen.clear()
+            content = json.dumps(backend.plan.return_value.model_dump())
+            adapter.plan(state)
     assert len(seen) == 1
     request = seen[0]
     policy = settings.model_policy()[operation]

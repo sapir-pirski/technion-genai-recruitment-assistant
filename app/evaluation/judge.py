@@ -10,11 +10,16 @@ from statistics import mean
 from uuid import uuid4
 
 from pydantic import Field, field_validator, model_validator
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.agents.backends.openai import OpenAIBackend
 from app.config import Settings
+from app.observability.logging import log_event
 from app.observability.tracing import TraceRecorder
 from app.schemas import JudgeRating, JudgeResult, QualityScore, StrictModel
+from app.storage.database import initialize_database, make_engine
+from app.storage.models import TraceSpan
 
 RUBRIC_VERSION = "quality-v1"
 DIMENSIONS = ("grounding", "completeness", "relevance_clarity", "followup_quality")
@@ -212,31 +217,55 @@ def summarize_rows(rows):
     }
 
 
-def trace_usage(recorder, request_id):
-    spans = [item for item in recorder.last_trace if item.request_id == request_id]
-    root = next((span for span in spans if span.parent_span_id is None), None)
-    calls = [span for span in spans if span.component == "llm" and span.operation == "judge"]
-    costs = [span.attributes.get("estimated_cost_usd") for span in calls]
-    return {
-        "trace_id": root.trace_id if root else None,
-        "recorded_calls": len(calls),
-        "missing_trace": not calls,
-        "model_duration_ms": round(sum(span.duration_ms for span in calls), 3) if calls else None,
-        "input_tokens": sum(span.input_tokens or 0 for span in calls)
-        if calls and all(span.input_tokens is not None for span in calls)
-        else None,
-        "output_tokens": sum(span.output_tokens or 0 for span in calls)
-        if calls and all(span.output_tokens is not None for span in calls)
-        else None,
-        "cached_input_tokens": sum(span.cached_input_tokens or 0 for span in calls)
-        if calls and all(span.cached_input_tokens is not None for span in calls)
-        else None,
-        "estimated_cost_usd": round(sum(value for value in costs if value is not None), 10)
-        if any(value is not None for value in costs)
-        else None,
-        "unknown_cost_calls": sum(value is None for value in costs),
-        "models": sorted({span.model for span in calls if span.model}),
-    }
+def trace_usage(engine, request_id):
+    try:
+        with Session(engine) as session:
+            spans = list(
+                session.scalars(select(TraceSpan).where(TraceSpan.request_id == request_id))
+            )
+            root = next((span for span in spans if span.parent_span_id is None), None)
+            calls = [
+                span for span in spans if span.component == "llm" and span.operation == "judge"
+            ]
+            costs = [span.attributes.get("estimated_cost_usd") for span in calls]
+            return {
+                "trace_id": root.trace_id if root else None,
+                "recorded_calls": len(calls),
+                "missing_trace": not calls,
+                "model_duration_ms": round(sum(span.duration_ms for span in calls), 3)
+                if calls
+                else None,
+                "input_tokens": sum(span.input_tokens or 0 for span in calls)
+                if calls and all(span.input_tokens is not None for span in calls)
+                else None,
+                "output_tokens": sum(span.output_tokens or 0 for span in calls)
+                if calls and all(span.output_tokens is not None for span in calls)
+                else None,
+                "cached_input_tokens": sum(span.cached_input_tokens or 0 for span in calls)
+                if calls and all(span.cached_input_tokens is not None for span in calls)
+                else None,
+                "estimated_cost_usd": round(sum(value for value in costs if value is not None), 10)
+                if any(value is not None for value in costs)
+                else None,
+                "unknown_cost_calls": sum(value is None for value in costs),
+                "models": sorted({span.model for span in calls if span.model}),
+            }
+    except Exception as error:
+        log_event(
+            "quality_trace_read_failed", component="app.evaluation", error_code=type(error).__name__
+        )
+        return {
+            "trace_id": None,
+            "recorded_calls": 0,
+            "missing_trace": True,
+            "model_duration_ms": None,
+            "input_tokens": None,
+            "output_tokens": None,
+            "cached_input_tokens": None,
+            "estimated_cost_usd": None,
+            "unknown_cost_calls": 0,
+            "models": [],
+        }
 
 
 def write_report(path, report):
@@ -270,44 +299,49 @@ def evaluate_quality(settings: Settings, input_path: Path, *, output: Path, limi
     cases, available, input_hash = load_cases(input_path, limit)
     settings.require_api_key()
     backend = backend or OpenAIBackend(settings)
+    engine = make_engine(settings.database_url)
     rows = []
-    recorder = TraceRecorder()
-    for index, case in enumerate(cases):
-        request_id = str(uuid4())
-        result, error = None, None
-        try:
-            with recorder.trace(
-                None,
-                request_id,
-                component="evaluation",
-                operation="quality",
-                attributes={
-                    "case_index": index,
-                    "case_sha256": digest(case.context()),
-                    "rubric_version": RUBRIC_VERSION,
-                },
-            ) as root:
-                result = assess_case(backend, case)
-                root.attributes["scored_dimensions"] = sum(
-                    getattr(result, name).score is not None for name in DIMENSIONS
-                )
-        except Exception as failure:
-            error = type(failure).__name__
-        rows.append(
-            {
-                "case_id": case.case_id,
-                "input_sha256": digest(case.context()),
-                "status": "failed" if error else "completed",
-                "error_code": error,
-                "assessment": result.model_dump() if result else None,
-                "human_scores": case.human_scores.model_dump() if case.human_scores else None,
-                "evidence": {
-                    item.evidence_id: digest(item.text)
-                    for item in case.sources + case.calendar_receipts
-                },
-                "usage": trace_usage(recorder, request_id),
-            }
-        )
+    try:
+        initialize_database(engine)
+        recorder = TraceRecorder(engine)
+        for index, case in enumerate(cases):
+            request_id = str(uuid4())
+            result, error = None, None
+            try:
+                with recorder.trace(
+                    None,
+                    request_id,
+                    component="evaluation",
+                    operation="quality",
+                    attributes={
+                        "case_index": index,
+                        "case_sha256": digest(case.context()),
+                        "rubric_version": RUBRIC_VERSION,
+                    },
+                ) as root:
+                    result = assess_case(backend, case)
+                    root.attributes["scored_dimensions"] = sum(
+                        getattr(result, name).score is not None for name in DIMENSIONS
+                    )
+            except Exception as failure:
+                error = type(failure).__name__
+            rows.append(
+                {
+                    "case_id": case.case_id,
+                    "input_sha256": digest(case.context()),
+                    "status": "failed" if error else "completed",
+                    "error_code": error,
+                    "assessment": result.model_dump() if result else None,
+                    "human_scores": case.human_scores.model_dump() if case.human_scores else None,
+                    "evidence": {
+                        item.evidence_id: digest(item.text)
+                        for item in case.sources + case.calendar_receipts
+                    },
+                    "usage": trace_usage(engine, request_id),
+                }
+            )
+    finally:
+        engine.dispose()
     costs = [row["usage"]["estimated_cost_usd"] for row in rows]
     report = {
         "task": "quality",

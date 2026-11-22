@@ -1,0 +1,245 @@
+{
+  "version": 1,
+  "selection_mode": "reviewed_only",
+  "selection": "Refresh the ten explicitly selected Python developer postings only. No discovery or automatic replacement.",
+  "sources": [
+    {
+      "provider": "web",
+      "board": "iifon",
+      "company": "IFON India internet Foundation",
+      "postings": [
+        {
+          "external_job_id": "JD-202402",
+          "url": "https://iifon.org/wp-content/uploads/2024/05/JD-202402-Python-Developer.pdf",
+          "title": "Python Developer",
+          "format": "pdf",
+          "start_marker": null,
+          "end_marker": null,
+          "locations": [],
+          "reviewed_text_sha256": "2664573443d6032168a97a5d333f85995e09a4e2ade3261b12bbd41b0f0b3205"
+        }
+      ],
+      "selected_job_ids": [
+        "job-52ebf4c181216c1fe9eb35a0"
+      ]
+    },
+    {
+      "provider": "web",
+      "board": "scry",
+      "company": "Scry AI",
+      "postings": [
+        {
+          "external_job_id": "python-developer",
+          "url": "https://scryai.com/careers/",
+          "title": "Python Developer",
+          "format": "html",
+          "start_marker": "Python Developer\n3+ years of industry experience\nWorksite: Gurgaon / Noida / Pune",
+          "end_marker": "\nData Engineer Python\n",
+          "locations": [
+            "Gurgaon / Noida / Pune"
+          ],
+          "reviewed_text_sha256": "4afd110f8bc2c722cf04c1a625091acd7aa4d781b8e4b5eb0ffb3b4a3ddfc13f"
+        }
+      ],
+      "selected_job_ids": [
+        "job-5eca3f35af7d0ac7bf9f8012"
+      ]
+    },
+    {
+      "provider": "web",
+      "board": "ritwik",
+      "company": "RITWIK Infotech",
+      "postings": [
+        {
+          "external_job_id": "python-developer",
+          "url": "https://www.ritwikinfotech.com/careers",
+          "title": "Python Developer",
+          "format": "html",
+          "start_marker": "Python Developer\nLocation\nGurgaon/Kochi/Pollachi/Noida",
+          "end_marker": "\nSubmit",
+          "employment_type": "Full-Time",
+          "locations": [
+            "Gurgaon/Kochi/Pollachi/Noida"
+          ],
+          "reviewed_text_sha256": "729b6a40a598b3049a15f18c18518f1b771049f7893a868bb1ecb80ef3697e8d"
+        }
+      ],
+      "selected_job_ids": [
+        "job-69f071dada79fcad7554b821"
+      ]
+    },
+    {
+      "provider": "web",
+      "board": "ey",
+      "company": "EY",
+      "postings": [
+        {
+          "external_job_id": "1742084",
+          "url": "https://careers.ey.com/ey/job/Toronto-Senior-Consultant-Python-Developer-%28Data-Solutions-%26-Analytics%29-ON-M5H-0B3/1435050133/",
+          "title": "Senior Consultant - Python Developer (Data Solutions & Analytics)",
+          "format": "html",
+          "start_marker": "The Opportunity",
+          "end_marker": "\nApply now",
+          "locations": [
+            "Toronto"
+          ],
+          "reviewed_text_sha256": "48a1b092ae0c57310557e9316733676f4803e147036c505a847df9d0b6af5c73"
+        }
+      ],
+      "selected_job_ids": [
+        "job-8f98a8e37f2e0e13ccbf0b5f"
+      ],
+      "logo_url": "https://rmkcdn.successfactors.com/bcfdbc8a/013850a8-6899-42b9-89b8-9.ico"
+    },
+    {
+      "provider": "web",
+      "board": "linedata",
+      "company": "Linedata",
+      "postings": [
+        {
+          "external_job_id": "2026-143",
+          "url": "https://www.linedata.com/job-offer/consultant-python-2026-143",
+          "title": "Python Developer – Pandas Specialist",
+          "format": "html",
+          "start_marker": "Python Specialist – Data Processing & Analysis",
+          "end_marker": "\nApply for this job",
+          "workplace_type": "hybrid",
+          "source_notes": [
+            "The employer page title is Consultant - Python; its description names Python Developer – Pandas Specialist."
+          ],
+          "locations": [
+            "Mumbai, India"
+          ],
+          "reviewed_text_sha256": "455a8316010241a1b121d5c8b51356f02fc2b49d9351381b21cca139d58c7304"
+        }
+      ],
+      "selected_job_ids": [
+        "job-d4462be098523d8f953c84c3"
+      ]
+    },
+    {
+      "provider": "web",
+      "board": "rathin",
+      "company": "Rathin Tech",
+      "postings": [
+        {
+          "external_job_id": "python-developer-3-5",
+          "url": "https://www.rathintech.com/careers",
+          "title": "Python Developer (3–5 Years Experience)",
+          "format": "html",
+          "start_marker": "Python Developer (3–5 Years Experience)",
+          "end_marker": "\nSite Reliability Engineer (SRE)",
+          "locations": [],
+          "reviewed_text_sha256": "cae8182e7e2bded577ea9dd34b82f4a38736462d6f7a0569e611aae50e8832fb"
+        }
+      ],
+      "selected_job_ids": [
+        "job-dbd0e1e558423586665c45db"
+      ],
+      "logo_favicon_fallback": false
+    },
+    {
+      "provider": "web",
+      "board": "icogz",
+      "company": "icogz",
+      "postings": [
+        {
+          "external_job_id": "senior-python-developer",
+          "url": "https://www.icogz.com/careers/senior-python-developer",
+          "title": "Senior Python Developer",
+          "format": "html",
+          "start_marker": "\nSenior Python Developer\n",
+          "end_marker": "\nApply Now",
+          "locations": [
+            "Mumbai"
+          ],
+          "reviewed_text_sha256": "562177418c5d62629df81e76c390749397f4e1d06d08522cd47c98a82cabaef0"
+        }
+      ],
+      "selected_job_ids": [
+        "job-7c0aa07331d8cf13d04bba64"
+      ]
+    },
+    {
+      "provider": "web",
+      "board": "checkpayee",
+      "company": "CheckPayee",
+      "postings": [
+        {
+          "external_job_id": "python-developer",
+          "url": "https://verification-of-payee.com/jobs/python-developer",
+          "title": "Senior Python Developer – Fraud Detection & Data Analytics",
+          "format": "html",
+          "start_marker": "\nSenior Python Developer – Fraud Detection & Data Analytics\n",
+          "end_marker": "\nReady to Join Our Team?",
+          "workplace_type": "remote",
+          "employment_type": "Full-time",
+          "seniority": "Senior",
+          "source_published_at": "06.07.2025",
+          "compensation": {
+            "display": "€65,000 – €85,000"
+          },
+          "locations": [
+            "Remote / Berlin, Germany"
+          ],
+          "reviewed_text_sha256": "de0daa2c0c81393b15e4272ff04fa6539011d4e7b0acfed3e6042fa53808816f"
+        }
+      ],
+      "selected_job_ids": [
+        "job-3e6d50538be9175f69bf6133"
+      ]
+    },
+    {
+      "provider": "web",
+      "board": "symphoni",
+      "company": "SYMPHONI HR",
+      "postings": [
+        {
+          "external_job_id": "RtsVsEU7hU2I",
+          "url": "https://symphonihr.com/careers/jobs/RtsVsEU7hU2I/",
+          "title": "Senior Python Developer",
+          "format": "html",
+          "start_marker": "Home / Careers / Senior Python Developer",
+          "end_marker": "\nApply for this role",
+          "workplace_type": "hybrid",
+          "source_published_at": "2026-10-08",
+          "locations": [
+            "Mumbai"
+          ],
+          "reviewed_text_sha256": "4cf4514ca9cbdc53126b1f47b4fd3ff6775f3478e91fe9660a4d90baaceb29a1"
+        }
+      ],
+      "selected_job_ids": [
+        "job-64b9a0816379497015fd0ca8"
+      ]
+    },
+    {
+      "provider": "web",
+      "board": "ubique",
+      "company": "Ubique Systems",
+      "postings": [
+        {
+          "external_job_id": "TRPD-26-06407",
+          "url": "https://www.ubique-systems.com/careers/python-developer-trpd-26-06407",
+          "title": "Python Developer",
+          "format": "html",
+          "start_marker": "TRPD-26-06407\nPython Developer",
+          "end_marker": "\nWhat you'll gain",
+          "workplace_type": "on-site",
+          "employment_type": "Full Time",
+          "source_notes": [
+            "The posting's Workplace field says On-site, while its narrative says the work mode is not specified. Confirm the arrangement with the employer.",
+            "The technology cards label the listed tools Required, while the narrative says that not every tool in the broader toolkit is mandatory. Confirm the essential tools with the employer."
+          ],
+          "locations": [
+            "Korba, Chhattisgarh, India"
+          ],
+          "reviewed_text_sha256": "a377c0ec2b11ec65f80835d092b4d0ecc88c982fe16f408221c901eb2427ecec"
+        }
+      ],
+      "selected_job_ids": [
+        "job-57d455f053e59582141b7334"
+      ]
+    }
+  ]
+}

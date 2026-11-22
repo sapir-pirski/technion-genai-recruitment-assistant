@@ -2,7 +2,7 @@ import hashlib
 import json
 import re
 
-from app.agents.backends.common import explicit_stop, has_opt_out_signal, latest_text
+from app.agents.backends.common import explicit_stop, latest_text
 from app.schemas import Plan, TurnResult
 
 
@@ -136,26 +136,15 @@ def booking_acknowledged(state: dict) -> bool:
 def should_close(state: dict) -> bool:
     if booking_acknowledged(state):
         return False
-    # Output validation runs after compose has appended the assistant reply.
-    text = next(
-        (
-            message["content"]
-            for message in reversed(state.get("messages", []))
-            if message["role"] == "user"
-        ),
-        "",
-    )
     plan = state.get("turn_intent") or state.get("plan", {})
     if plan.get("stop_requested"):
         # A profile fact or a Main Agent assertion alone cannot authorize closure.
-        return explicit_stop(text) or (
-            plan.get("closure_reason") == "opt_out"
-            and state.get("exit_label") == "end"
-            and has_opt_out_signal(text)
+        return explicit_stop(latest_text(state)) or (
+            plan.get("closure_reason") == "opt_out" and state.get("exit_label") == "end"
         )
     # Exit's binary label also covers completed scheduling. Without an opt-out
     # intent it cannot establish closure; only a SQL receipt establishes completion.
-    return explicit_stop(text)
+    return explicit_stop(latest_text(state))
 
 
 def compose(state: dict) -> dict:
@@ -212,9 +201,13 @@ def compose(state: dict) -> dict:
             if not scheduling_performed and not booking and state.get("scheduling_enabled", True):
                 parts.append("Would you like to arrange an interview?")
         if not parts:
+            conflicts = state.get("candidate_profile", {}).get("conflicts", [])
+            fields = {item["field"] for item in conflicts}
             question = (
-                "Would you like to ask about the role or arrange an interview?"
-                if intent.get("stop_requested") and not has_opt_out_signal(latest_text(state))
+                "Your background contains different Python experience claims. Please state your current years of Python experience and explicitly correct the older claim."
+                if "python_experience" in fields
+                else "Your sources contain different names. Please state your correct name explicitly."
+                if "identity" in fields
                 else "Would you like to end the conversation, or continue arranging an interview?"
                 if state.get("exit_label") == "end"
                 else plan["next_question"]

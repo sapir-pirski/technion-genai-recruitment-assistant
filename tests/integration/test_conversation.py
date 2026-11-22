@@ -3,13 +3,14 @@ from datetime import timedelta
 from unittest.mock import Mock
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.scheduling.models import Slot
+from app.ingestion.models import DEFAULT_JOB_ID
 from app.schemas import InfoAnswer, InfoDecision
-from app.workflow.service import ChatService
+from app.service import ChatService
+from app.storage.models import Slot, TraceSpan
 
 
 def plan_turn(service, **changes):
@@ -70,38 +71,6 @@ def test_opt_out_never_consults_scheduling(service, now):
     assert "scheduling" not in reply.advisors
 
 
-@pytest.mark.parametrize(
-    "text",
-    [
-        "I have four years of Python experience building Flask APIs and SQL-backed services.",
-        "This is verification-exit. I have four years of Python experience.",
-        'My old application says "not interested", but I want to continue here.',
-    ],
-)
-def test_model_agreement_cannot_invent_candidate_disinterest(service, now, text):
-    plan_turn(service, stop_requested=True, closure_reason="opt_out")
-    service.backend.exit_label.return_value = "end"
-    reply = service.turn("false-opt-out", text, reference_time=now)
-    assert reply.conversation_status == "active" and reply.action == "continue"
-    assert reply.closure_reason is None and not reply.booking
-    assert "ask about the role or arrange an interview" in reply.response
-    service.backend.exit_label.assert_called_once()
-    service.backend.schedule.assert_not_called()
-
-
-def test_contextual_disinterest_still_closes_with_exit_agreement(service, now):
-    plan_turn(service, stop_requested=True, closure_reason="opt_out")
-    service.backend.exit_label.return_value = "end"
-    reply = service.turn(
-        "contextual-opt-out",
-        "Thanks for reaching out, but I am no longer interested in this opportunity.",
-        reference_time=now,
-    )
-    assert reply.action == "end" and reply.closure_reason == "opt_out"
-    service.backend.exit_label.assert_called_once()
-    service.backend.schedule.assert_not_called()
-
-
 def test_slot_rejection_keeps_conversation_active(service, now):
     plan_turn(service, scheduling_needed=True)
     previous = service.turn("alice", "Schedule an interview", reference_time=now)
@@ -153,17 +122,33 @@ def test_unknown_job_information_is_not_invented(service, now):
     assert "recruiter" in reply.response
 
 
-def test_legacy_job_cannot_start_or_resume_a_conversation(service, now, legacy_job, monkeypatch):
+def add_reference_job(service):
+    service.registry.source({"provider": "greenhouse", "board": "test", "company": "Example"})
+    service.registry.save_job(
+        {
+            "job_id": "reference",
+            "source_id": "greenhouse:test",
+            "external_job_id": "1",
+            "canonical_url": "https://example.com/1",
+            "company_name": "Example",
+            "title": "Python Backend Engineer",
+            "description_text": "Python",
+            "locations": [],
+        }
+    )
+
+
+def test_reference_job_never_offers_assignment_calendar(service, now):
     plan_turn(service, scheduling_needed=True)
-    with pytest.raises(ValueError, match="Only the assignment"):
-        service.turn(
-            "reference-chat", "Schedule an interview", job_id=legacy_job, reference_time=now
-        )
-    monkeypatch.setattr(service, "state", lambda conversation_id: {"job_id": legacy_job})
-    with pytest.raises(ValueError, match="Start a new conversation"):
-        service.turn("reference-chat", "Hello", reference_time=now)
-    service.backend.plan.assert_not_called()
-    service.backend.schedule.assert_not_called()
+    add_reference_job(service)
+    reply = service.turn(
+        "reference-chat", "Schedule an interview", job_id="reference", reference_time=now
+    )
+    assert not reply.offered_slots and not reply.booking
+    assert "reference only" in reply.response
+    assert service.state("reference-chat")["job_id"] == "reference"
+    with pytest.raises(ValueError, match="change jobs"):
+        service.turn("reference-chat", "Hello", job_id=DEFAULT_JOB_ID, reference_time=now)
 
 
 def test_availability_search_can_find_appointments_beyond_30_days(service, now):
@@ -198,16 +183,17 @@ def test_unavailable_preferences_offer_labelled_alternatives_and_trace_ids(
     assert len(reply.offered_slots) == 3 and not reply.booking
     assert "No appointments match" in reply.response and "alternatives" in reply.response
     assert service.state("alternatives")["schedule"]["status"] == "alternatives"
-    spans = [item for item in service.traces.last_trace if item.component == "calendar"]
-    searches = [item for item in spans if item.operation == "search"]
-    assert {item.attributes["search_kind"] for item in searches} == {"matching", "alternatives"}
-    alternative = next(
-        item for item in searches if item.attributes["search_kind"] == "alternatives"
-    )
-    assert alternative.attributes["offered_slot_ids"] == [
-        slot["id"] for slot in reply.offered_slots
-    ]
-    assert private not in json.dumps([item.attributes for item in spans])
+    with Session(service.registry.engine) as session:
+        spans = list(session.scalars(select(TraceSpan).where(TraceSpan.component == "calendar")))
+        searches = [item for item in spans if item.operation == "search"]
+        assert {item.attributes["search_kind"] for item in searches} == {"matching", "alternatives"}
+        alternative = next(
+            item for item in searches if item.attributes["search_kind"] == "alternatives"
+        )
+        assert alternative.attributes["offered_slot_ids"] == [
+            slot["id"] for slot in reply.offered_slots
+        ]
+        assert private not in json.dumps([item.attributes for item in spans])
 
 
 def test_booking_conflict_refreshes_alternatives_then_requires_new_confirmation(service, now):

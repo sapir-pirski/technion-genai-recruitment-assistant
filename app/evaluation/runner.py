@@ -8,18 +8,17 @@ from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy.schema import CreateSchema, DropSchema
 
 from app.agents.backends.common import prompt_manifest
-from app.agents.backends.openai import OpenAIBackend
 from app.config import Settings
-from app.dataset import (
+from app.evaluation.dataset import (
     build_examples,
     dataset_fingerprint,
     load_conversations,
     split_examples,
 )
 from app.evaluation.metrics import summarize
-from app.scheduling.repository import ScheduleRepository
+from app.service import ChatService
 from app.storage.database import make_engine
-from app.workflow.service import ChatService
+from app.storage.schedule_repository import ScheduleRepository
 
 
 def evaluate(
@@ -29,34 +28,72 @@ def evaluate(
     prompt_versions = prompt_manifest(settings)
     conversations = load_conversations(settings)
     examples = split_examples(build_examples(conversations), split)
-    if task == "exit":
-        backend = OpenAIBackend(settings)
-        if isinstance(getattr(backend, "prompt_manifest", None), dict):
-            prompt_versions = backend.prompt_manifest
-        rows = []
-        for example in examples:
-            started, error = time.perf_counter(), None
-            try:
-                prediction = backend.exit_label(example["history"])
-                if prediction not in {"end", "do_not_end"}:
-                    raise ValueError("Invalid Exit label")
-            except Exception as exception:
-                prediction, error = None, type(exception).__name__
-            rows.append(
-                {
-                    "conversation_id": example["conversation_id"],
-                    "turn_id": example["turn_id"],
-                    "expected": "end" if example["label"] == "end" else "do_not_end",
-                    "predicted": prediction,
-                    "error": error,
-                    "is_opening": example["is_opening"],
-                    "seconds": round(time.perf_counter() - started, 3),
-                }
-            )
-    elif task == "actions":
-        rows, prompt_versions = _evaluate_actions(settings, examples, prompt_versions)
-    else:
-        raise ValueError("Choose actions or exit for labeled benchmark evaluation")
+    rows = []
+    # Benchmark cannot mutate the interactive application's bookings/checkpoints.
+    engine = make_engine(settings.database_url)
+    schema = "evaluation_" + uuid4().hex
+    with engine.begin() as connection:
+        connection.execute(CreateSchema(schema))
+    try:
+        repository = ScheduleRepository(
+            engine.execution_options(schema_translate_map={None: schema})
+        )
+        service = ChatService(settings, repository=repository, checkpointer=InMemorySaver())
+        if isinstance(getattr(service.backend, "prompt_manifest", None), dict):
+            prompt_versions = service.backend.prompt_manifest
+        try:
+            for example in examples:
+                started = time.perf_counter()
+                error = None
+                with service.traces.trace(
+                    None,
+                    str(uuid4()),
+                    component="evaluation",
+                    operation=task,
+                    attributes={
+                        "split": split,
+                        "example_conversation_id": example["conversation_id"],
+                        "example_turn_id": example["turn_id"],
+                    },
+                ) as trace:
+                    if task == "exit":
+                        expected = "end" if example["label"] == "end" else "do_not_end"
+                        try:
+                            prediction = service.backend.exit_label(example["history"])
+                            if prediction not in {"end", "do_not_end"}:
+                                raise ValueError("Invalid Exit label")
+                        except Exception as exc:
+                            prediction, error = None, type(exc).__name__
+                    else:
+                        expected = example["label"]
+                        try:
+                            result = service.evaluate_prefix(
+                                example["history"],
+                                datetime.fromisoformat(example["reference_time"]),
+                            )
+                            error = result.error
+                            prediction = None if error else result.action
+                        except Exception as exc:
+                            prediction, error = None, type(exc).__name__
+                    if error:
+                        trace.fail(error)
+                rows.append(
+                    {
+                        "conversation_id": example["conversation_id"],
+                        "turn_id": example["turn_id"],
+                        "expected": expected,
+                        "predicted": prediction,
+                        "error": error,
+                        "is_opening": example["is_opening"],
+                        "seconds": round(time.perf_counter() - started, 3),
+                    }
+                )
+        finally:
+            service.close()
+    finally:
+        with engine.begin() as connection:
+            connection.execute(DropSchema(schema, cascade=True))
+        engine.dispose()
     labels = ["do_not_end", "end"] if task == "exit" else None
     report = {
         "provider": settings.exit_provider if task == "exit" else "openai",
@@ -72,9 +109,7 @@ def evaluate(
         "task": task,
         "evaluation_mode": "historical_prefix",
         "booking_correctness": None,
-        "calendar_context": "unavailable; empty isolated calendar"
-        if task == "actions"
-        else "not used by Exit classification",
+        "calendar_context": "unavailable; empty isolated calendar",
         "metric_version": "failure-aware-v2",
         "split": split,
         "dataset_version": settings.dataset_version,
@@ -84,7 +119,7 @@ def evaluate(
         "candidate_responses": summarize([row for row in rows if not row["is_opening"]], labels),
         "rows": rows,
         "limitations": [
-            f"{len({row['conversation_id'] for row in examples})} evaluated conversations; results are exploratory.",
+            "15 conversations; results are exploratory.",
             "Historical transcripts lack verified slot IDs. The runtime refuses unverified bookings; gold labels sometimes assume them.",
             "No verified historical recruiter calendar was supplied; evaluation uses an empty isolated calendar and never invents availability.",
         ],
@@ -94,64 +129,6 @@ def evaluate(
         output.write_text(json.dumps(report, indent=2))
         output.chmod(0o600)
     return report
-
-
-def _evaluate_actions(settings, examples, prompt_versions):
-    # Runtime evaluation still uses SQL tools, isolated from interactive bookings.
-    rows = []
-    engine = make_engine(settings.database_url, schema=settings.database_schema)
-    schema = "evaluation_" + uuid4().hex
-    with engine.begin() as connection:
-        connection.execute(CreateSchema(schema))
-    try:
-        repository = ScheduleRepository(
-            engine.execution_options(schema_translate_map={None: schema})
-        )
-        service = ChatService(settings, repository=repository, checkpointer=InMemorySaver())
-        if isinstance(getattr(service.backend, "prompt_manifest", None), dict):
-            prompt_versions = service.backend.prompt_manifest
-        try:
-            for example in examples:
-                started, error = time.perf_counter(), None
-                with service.traces.trace(
-                    None,
-                    str(uuid4()),
-                    component="evaluation",
-                    operation="actions",
-                    attributes={
-                        "split": example["split"],
-                        "example_conversation_id": example["conversation_id"],
-                        "example_turn_id": example["turn_id"],
-                    },
-                ) as trace:
-                    try:
-                        result = service.evaluate_prefix(
-                            example["history"], datetime.fromisoformat(example["reference_time"])
-                        )
-                        error = result.error
-                        prediction = None if error else result.action
-                    except Exception as exception:
-                        prediction, error = None, type(exception).__name__
-                    if error:
-                        trace.fail(error)
-                rows.append(
-                    {
-                        "conversation_id": example["conversation_id"],
-                        "turn_id": example["turn_id"],
-                        "expected": example["label"],
-                        "predicted": prediction,
-                        "error": error,
-                        "is_opening": example["is_opening"],
-                        "seconds": round(time.perf_counter() - started, 3),
-                    }
-                )
-        finally:
-            service.close()
-    finally:
-        with engine.begin() as connection:
-            connection.execute(DropSchema(schema, cascade=True))
-        engine.dispose()
-    return rows, prompt_versions
 
 
 def evaluate_local_exit(settings, artifact: Path, *, split="test", output: Path | None = None):
@@ -213,12 +190,12 @@ def evaluate_local_exit(settings, artifact: Path, *, split="test", output: Path 
         ),
         "rows": rows,
         "limitations": [
-            f"{len({row['conversation_id'] for row in examples})} held-out conversations; results are exploratory.",
+            "Three held-out conversations; results are exploratory.",
             "Test data was excluded from training and checkpoint/quantization selection.",
         ],
     }
     if output:
-        from app.fine_tuning.train import write_json
+        from app.fine_tuning.huggingface import write_json
 
         write_json(output, report)
     return report
