@@ -13,10 +13,13 @@ from app.config import Settings
 from app.guardrails import model_data
 from app.observability.tracing import span
 from app.schemas import (
+    ChatProfileUpdate,
+    FollowupQuestions,
     InfoAnswer,
     InfoDecision,
     JudgeResult,
     Plan,
+    ProfileSections,
 )
 
 
@@ -46,7 +49,7 @@ class OpenAIBackend:
             return ChatOpenAI(**parameters)
 
         self.chat = client("main")
-        self.helper = client("info_decision")
+        self.helper = client("profile_extraction")
         self.exit = client("exit") if settings.exit_provider == "openai" else None
         self.judge_client = client("judge")
 
@@ -63,6 +66,25 @@ class OpenAIBackend:
             Plan,
             "main",
             self._messages("main", model_context(state)),
+        )
+
+    def extract_profile(self, text: str) -> ProfileSections:
+        return self._structured(
+            ProfileSections,
+            "profile_extraction",
+            self._messages("profile_extraction", text),
+        )
+
+    def extract_chat_profile(self, context: dict) -> ChatProfileUpdate:
+        return self._structured(
+            ChatProfileUpdate, "chat_profile", self._messages("chat_profile", context)
+        )
+
+    def suggest_followups(self, context: dict) -> FollowupQuestions:
+        return self._structured(
+            FollowupQuestions,
+            "followups",
+            self._messages("followups", context),
         )
 
     def judge_quality(self, context: dict) -> JudgeResult:
@@ -88,7 +110,7 @@ class OpenAIBackend:
             self.judge_client
             if operation == "judge"
             else self.helper
-            if operation == "info_decision"
+            if operation in {"profile_extraction", "followups", "info_decision"}
             else self.chat
         )
         policy = self.policy[operation]
@@ -158,7 +180,7 @@ class OpenAIBackend:
         ) as item:
             response = self.chat.bind_tools(
                 [tool], tool_choice="auto", parallel_tool_calls=False
-            ).invoke(self._messages("scheduling", model_context(state)))
+            ).invoke(self._messages("scheduling", model_context(state, include_profile=False)))
             item.usage(response)
             if not response.tool_calls:
                 if (
@@ -178,7 +200,7 @@ class OpenAIBackend:
             self._messages(
                 "info_decision",
                 {
-                    **model_context(state),
+                    **model_context(state, include_profile=False),
                     "latest_candidate_message": state.get("messages", [])[-1]["content"]
                     if state.get("messages") and state["messages"][-1]["role"] == "user"
                     else "",

@@ -12,11 +12,7 @@ from app.storage.database import initialize_database, make_engine
 class PostgresVectorStore:
     def __init__(self, settings, embeddings, *, engine=None):
         self.settings, self.embeddings = settings, embeddings
-        self.engine = (
-            engine
-            if engine is not None
-            else make_engine(settings.database_url, schema=settings.database_schema)
-        )
+        self.engine = engine if engine is not None else make_engine(settings.database_url)
         self._owns_engine = engine is None
         initialize_database(self.engine)
         self.collection_id = settings.index_collection

@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily recruitment job synchronization
+
+[Timer]
+OnCalendar=*-*-* 03:17:00 Asia/Jerusalem
+Persistent=true
+Unit=recruitment-job-sync.service
+
+[Install]
+WantedBy=timers.target

@@ -1,4 +1,4 @@
-"""Local ONNX inference, optionally fetching pinned model files from Hugging Face."""
+"""Local ModernBERT classifier; CPU inference without PyTorch or network calls."""
 
 import hashlib
 import json
@@ -9,39 +9,6 @@ import numpy as np
 
 from app.fine_tuning.exit_data import INPUT_SHA256, LABELS, classifier_spec, history_text
 from app.observability.tracing import span
-
-
-@lru_cache(maxsize=2)
-def _hub_artifact(repo_id, revision, token):
-    from huggingface_hub import snapshot_download
-
-    from app.config import ROOT
-
-    try:
-        return snapshot_download(
-            repo_id=repo_id,
-            revision=revision,
-            token=token or False,
-            allow_patterns=["model.onnx", "tokenizer.json", "exit_classifier.json"],
-            cache_dir=str(ROOT / "artifacts/huggingface"),
-        )
-    except Exception:
-        raise ValueError(
-            "Cannot fetch the pinned Exit artifact. Check HF_EXIT_REPO_ID, "
-            "HF_EXIT_REPO_REVISION and read access through HF_TOKEN."
-        ) from None
-
-
-def artifact_directory(settings):
-    if settings.hf_exit_repo_id:
-        return Path(
-            _hub_artifact(
-                settings.hf_exit_repo_id,
-                settings.hf_exit_repo_revision,
-                settings.hf_token.get_secret_value(),
-            )
-        )
-    return settings.hf_exit_local_path.resolve()
 
 
 @lru_cache(maxsize=2)
@@ -111,9 +78,7 @@ def exit_label(settings, history, *, artifact_path=None):
             "billable_tokens": False,
             "estimated_cost_usd": 0.0,
             "price_version": "local-inference-no-api-charge",
-            "artifact_source": "huggingface_hub"
-            if settings.hf_exit_repo_id and not artifact_path
-            else "local",
+            "artifact_source": "local",
         },
     ) as item:
         if not history:
@@ -121,7 +86,7 @@ def exit_label(settings, history, *, artifact_path=None):
             item.attributes["decision"] = "do_not_end"
             item.attributes["empty_history"] = True
             return "do_not_end"
-        directory = Path(artifact_path).resolve() if artifact_path else artifact_directory(settings)
+        directory = Path(artifact_path or settings.hf_exit_local_path).resolve()
         tokenizer, session, manifest = _load_local(str(directory), revision)
         encoding = tokenizer.encode(history_text(history))
         item.input_tokens, item.output_tokens = len(encoding.ids), 0

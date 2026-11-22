@@ -1,8 +1,0 @@
--r requirements.txt
-
-# Optional local ModernBERT training and ONNX export.
-transformers==4.57.6
-onnx==1.23.2
-# CPU-only training wheel for Linux/x86-64 Python 3.13.
-torch @ https://download.pytorch.org/whl/cpu/torch-2.15.0%2Bcpu-cp313-cp313-manylinux_2_28_x86_64.whl ; sys_platform == "linux" and platform_machine == "x86_64" and python_version == "3.13"
-torch==2.15.0 ; sys_platform != "linux" or platform_machine != "x86_64" or python_version != "3.13"
