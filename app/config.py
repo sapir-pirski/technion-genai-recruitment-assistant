@@ -1,10 +1,11 @@
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -44,6 +45,8 @@ class Settings(BaseSettings):
     hf_exit_model: str = "answerdotai/ModernBERT-base (fine-tuned)"
     hf_exit_revision: str = Field(default_factory=local_exit_revision)
     hf_exit_local_path: Path = LOCAL_EXIT
+    hf_exit_repo_id: str = ""
+    hf_exit_repo_revision: str = ""
     embedding_model: str = "text-embedding-3-small"
     job_sources_path: Path = ROOT / "config/job_sources.json"
     job_manifest_path: Path = ROOT / "config/job_corpus_manifest.json"
@@ -63,6 +66,14 @@ class Settings(BaseSettings):
     max_retries: int = Field(default=2, ge=0, le=5)
     max_output_tokens: int = Field(default=1500, ge=256)
     model_temperature: float | None = Field(default=0.0, ge=0, le=2)
+
+    @model_validator(mode="after")
+    def pinned_exit_repository(self):
+        if self.hf_exit_repo_id and not re.fullmatch(r"[a-f0-9]{40}", self.hf_exit_repo_revision):
+            raise ValueError("HF_EXIT_REPO_REVISION must pin an immutable 40-character commit")
+        if self.hf_exit_repo_revision and not self.hf_exit_repo_id:
+            raise ValueError("Set HF_EXIT_REPO_ID with HF_EXIT_REPO_REVISION")
+        return self
 
     def model_for(self, operation: str) -> str:
         if operation == "judge":
@@ -96,6 +107,8 @@ class Settings(BaseSettings):
                     "provider": "huggingface",
                     "model": model,
                     "revision": self.hf_exit_revision,
+                    "source_repository": self.hf_exit_repo_id,
+                    "source_commit": self.hf_exit_repo_revision,
                     "task": "text-classification",
                     "reasoning_effort": None,
                     "temperature": None,

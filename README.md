@@ -61,7 +61,7 @@ cp -n .env.example .env
 |---|---|
 | `OPENAI_API_KEY` | Chat agents, embeddings, and explicitly invoked OpenAI evaluations. |
 | `DATABASE_URL` | The shared hosted PostgreSQL/pgvector database, with TLS. |
-| `HF_TOKEN` | Downloading the base model for explicit local Hugging Face training. |
+| `HF_TOKEN` | Downloading the base model for local training or the pinned private Exit artifact. |
 
 The app opens at **[localhost:8502](http://127.0.0.1:8502)** by default. The
 launcher checks Python 3.11+ (preferring 3.13), prepares `.venv`, installs missing
@@ -170,25 +170,26 @@ The executed **[evaluation notebook](tests/test_evals.ipynb)** includes modern
 annotated confusion matrices, class metrics, baseline comparisons, and error IDs.
 It reads saved reports without making model API calls or exposing conversation text.
 A separate controlled replay passed 15 turns across six fictitious cases. The
-repository includes 122 Python tests and five browser-control checks.
+repository includes 124 Python tests and five browser-control checks.
 
 | Runtime | Exit Advisor | Model storage |
 |---|---|---|
 | **Locally activated training machine** | Fine-tuned ModernBERT, using ONNX Runtime on CPU. | Git-ignored `artifacts/hf-exit/`; no model upload. |
-| **Community Cloud / fresh checkout** | Prompted OpenAI baseline. | No trained weights or HF token copied to the deployment. |
+| **Community Cloud** | Fine-tuned ModernBERT, using local ONNX inference. | Three model files downloaded from the pinned private Hugging Face repository. |
+| **Unconfigured fresh checkout** | Prompted OpenAI baseline. | Configure trained model files or a pinned repository to use ModernBERT. |
 
 Training, data isolation, model integrity and evaluation limitations are documented
 in the [fine-tuning reference](#reference-evaluation).
 
 ## Submission verification
 
-Verified on **8 November 2026** using fictitious candidates and a disposable QA
+Verified on **22 November 2026** using fictitious candidates and a disposable QA
 database. Production interview slots and bookings are excluded from booking tests.
 
 | Check | Evidence |
 |---|---|
 | Main Agent and three advisors | LangGraph routing and Continue / Schedule / End checks; 15/15 controlled replay steps across six cases. |
-| Fine-tuned Exit Advisor | Locally activated ModernBERT; training and held-out comparison in the notebook. Hugging Face is approved for this assignment. The public app uses the prompted OpenAI baseline. |
+| Fine-tuned Exit Advisor | Locally activated ModernBERT; training and held-out comparison in the notebook. Hugging Face is approved for this assignment. The public app loads the same trained artifact from its pinned private repository. |
 | PDF embedding and retrieval | All 11 PDFs / 22 pages validate; 57 published PostgreSQL/pgvector chunks, using 1,536-dimensional OpenAI embeddings. |
 | SQL function calling | Three future choices, browser timezone, date interpretation, review/cancel, explicit confirmation and durable booking receipts. |
 | Candidate intake | Automatic combined intake; PDF, DOC, DOCX and TXT read successfully. Invalid type, corrupt PDF and files over 5 MB are rejected. |
@@ -196,7 +197,7 @@ database. Production interview slots and bookings are excluded from booking test
 | Browser controls | Original-PDF download matches its source bytes; print-to-PDF preserves the answer; recording downloads locally and releases capture. |
 | Interface | Fixed starters, contextual questions, source references, role/company/location selection and a 390 × 844 responsive check. |
 | Persistence and diagnostics | Conversation JSON, checkpoint recovery, duplicate-request protection, trace links and token accounting verified. |
-| Automated checks | 122 Python cases and five browser-control cases covered. Hosted-database UI checks allow 60 seconds for completion; these are behavior checks, not latency benchmarks. |
+| Automated checks | 124 Python cases and five browser-control cases covered. Hosted-database UI checks allow 60 seconds for completion; these are behavior checks, not latency benchmarks. |
 | Repository and setup | Virtual environment, one requirements file, secret-only environment template, launcher, license, contributors and task documentation. |
 | Deployment | [Streamlit Community Cloud](https://technion-genai-recruitment-assistant.streamlit.app) with hosted PostgreSQL/pgvector. |
 
@@ -302,12 +303,13 @@ Both `.env` and `.env.example` contain exactly three variables:
 |---|---|
 | `OPENAI_API_KEY` | OpenAI access for agents, embeddings and explicitly invoked evaluations |
 | `DATABASE_URL` | The shared hosted PostgreSQL/pgvector connection, with TLS |
-| `HF_TOKEN` | Hugging Face authentication when downloading the base model for local Exit training |
+| `HF_TOKEN` | Hugging Face authentication for local base-model training downloads and the private Cloud artifact |
 
 The selected Hugging Face model is `answerdotai/ModernBERT-base`, fine-tuned for
 the Exit Advisor's `end` / `do_not_end` classification. Training runs locally;
-runtime inference reads local files and needs no Hugging Face connection or token.
-No model weights, benchmark text or Hugging Face token are sent to Community Cloud.
+inference uses local ONNX files. Community Cloud downloads only the weights,
+tokenizer and checksum manifest from the pinned private repository. Candidate
+history is never sent to Hugging Face; the read token stays in deployment secrets.
 
 Keep `.env` private. Use the same database connection as Community Cloud, with
 `sslmode=require` or stronger verification. Startup rejects loopback database hosts.
@@ -484,8 +486,8 @@ This is a short-term assignment configuration. OpenAI lists **11 December 2026**
 as GPT-5 nano's shutdown date and **14 January 2027** for GPT-4o mini. Replace and
 evaluate these models before those dates; do not silently switch a running app.
 See the [official deprecations](https://developers.openai.com/api/docs/deprecations).
-GPT-5 nano remains the prompted Exit baseline used by Community Cloud. The local
-ModernBERT classifier is fine-tuned, with results and limitations below.
+GPT-5 nano provides the optional prompted Exit baseline. The fine-tuned
+ModernBERT classifier runs locally and in Community Cloud, with results below.
 The local ModernBERT classifier has no generative prompt or sampling parameters. Its trace records the versioned history-input contract and artifact SHA-256 instead.
 
 </details>
@@ -1649,11 +1651,12 @@ python -m app.main activate-exit-hf
 Weights, tokenizer, activation receipt and aggregate training history remain under
 Git-ignored `artifacts/hf-exit/`; the held-out report is
 `artifacts/exit_test_huggingface.json`. Public base-model downloads are cached in
-`artifacts/huggingface/`. No trained model, benchmark text or HF token is uploaded to
-Hugging Face or Streamlit. A local activation receipt selects the classifier on this
-machine. Fresh checkouts and Community Cloud have no receipt and use the prompted
-OpenAI baseline; set `Settings.exit_provider` explicitly to `openai` to compare it
-locally. This provider difference is recorded in evaluation and tracing metadata.
+`artifacts/huggingface/`. A local activation receipt selects the classifier on this
+machine. Community Cloud uses the existing private repository at an immutable
+commit, downloading only model.onnx, tokenizer.json and exit_classifier.json.
+Existing checksum and input-contract checks validate those files before inference.
+Set `Settings.exit_provider` to `openai` for an explicit baseline comparison.
+Provider and artifact identity are recorded in evaluation and tracing metadata.
 
 `classifier/exit` spans record artifact identity, measured input tokens, truncation,
 decision and latency without input text. Tokens are marked nonbillable; zero API
@@ -1904,8 +1907,8 @@ is not available; fixture results do not establish production accuracy.
 
 ### Automated checks
 
-The suite contains **122 Python tests across 14 modules**, plus **5 browser-control
-checks**: **127 automated checks** in total.
+The suite contains **124 Python tests across 14 modules**, plus **5 browser-control
+checks**: **129 automated checks** in total.
 
 The required `tests/test_evals.ipynb` is executed, with saved accuracy and
 confusion-matrix outputs. The automated suite emphasizes these behaviors:
@@ -1972,14 +1975,23 @@ The hosted database is PostgreSQL 17/pgvector on Neon in Frankfurt. Its 22-table
 schema stores the job catalog, 57 active RAG chunks, recruiter calendar, bookings,
 conversations, benchmark, logs and graph checkpoints. Credentials and provisioning
 records stay Git ignored. Use the provider’s direct connection with TLS and channel
-binding for persistent graph checkpoints. Cloud uses the prompted OpenAI Exit
-Advisor; the local fine-tuned model stays on its training machine.
+binding for persistent graph checkpoints. Cloud uses the fine-tuned Exit model
+from the pinned private repository; inference runs on CPU inside the app.
 
 1. Use the source and PDF inputs in this GitHub repository. Keep credentials,
    benchmark records, generated exports, conversation files and local reports excluded.
 2. Select `streamlit_app/streamlit_main.py` and Python 3.13.
 3. Provision persistent PostgreSQL with pgvector; configure TLS according to the provider.
-4. Set `OPENAI_API_KEY` and `DATABASE_URL` through deployment secrets.
+4. Set `OPENAI_API_KEY` and `DATABASE_URL` through deployment secrets. For the
+   trained Exit model, preserve these existing settings:
+
+   ```toml
+   EXIT_PROVIDER = "huggingface"
+   HF_EXIT_REPO_ID = "sapir-pirski/technion-recruitment-exit-8bfb0c30"
+   HF_EXIT_REPO_REVISION = "b743e0bfa41f7253a54dc5ec0abf6f878bed422c"
+   HF_EXIT_REVISION = "8bfb0c30560f6069412ff19210678ce1ca6f5c8b08b5db3fb92375c9ff631582"
+   HF_TOKEN = "<private repository read token>"
+   ```
 5. Initialize the hosted schema and run ingestion against that database before use.
    Transfer only the intended role configuration and recruiter-approved availability;
    do not copy local candidate histories, bookings or private benchmark records by default.
