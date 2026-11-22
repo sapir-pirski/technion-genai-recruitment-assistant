@@ -179,7 +179,7 @@ class OpenAIBackend:
             attributes=self.prompt_manifest["scheduling"],
         ) as item:
             response = self.chat.bind_tools(
-                [tool], tool_choice="auto", parallel_tool_calls=False
+                [tool], tool_choice="auto", parallel_tool_calls=False, strict=True
             ).invoke(self._messages("scheduling", model_context(state, include_profile=False)))
             item.usage(response)
             if not response.tool_calls:

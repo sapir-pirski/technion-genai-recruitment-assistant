@@ -77,6 +77,16 @@ def test_function_call_executes_validated_calendar_tool(repository, now):
     assert result["decision"] == "schedule"
     assert seen[0]["tool_choice"] == "auto"
     assert seen[0]["tools"][0]["function"]["name"] == "manage_interview"
+    definition = seen[0]["tools"][0]["function"]
+    assert definition["strict"] is True
+    assert definition["parameters"]["additionalProperties"] is False
+    assert set(definition["parameters"]["required"]) == {
+        "date_text",
+        "time_text",
+        "period",
+        "selected_slot_id",
+        "accepts_slot",
+    }
     assert seen[0]["parallel_tool_calls"] is False
     assert seen[0]["messages"][0]["role"] == "system"
     assert (
