@@ -54,11 +54,10 @@ PostgreSQL/pgvector**. The catalog contains the assignment's Python Developer ro
 and ten selected public reference postings. Recruiter-approved scheduling is available
 for the assignment role.
 
-> **Project status:** This README describes the local checkout. Its startup recovery
-> and conversation fixes are locally verified and await a Community Cloud release.
-> The [live demo](https://technion-genai-recruitment-assistant.streamlit.app) and the
-> screenshots show the hosted application. See [verification](#testing-and-live-verification)
-> for the scope of each check.
+> **Project status:** Deployed on [Streamlit Community Cloud](https://technion-genai-recruitment-assistant.streamlit.app).
+> The hosted release was verified on **November 22, 2026** with fictitious candidates.
+> Hosted traces match the current Main prompt and pinned ModernBERT artifact.
+> See [verification](#testing-and-live-verification) for the scope of each check.
 
 ## Features
 
@@ -578,6 +577,7 @@ Verified on **November 22, 2026**. The suite contains **128 Python tests across
 mocked; live-model scenarios below are separate runs with fictitious messages.
 Closure, candidate-reset, qualification and scope checks use this checkout against an isolated database with the
 configured Main model and fine-tuned Exit classifier. Screenshots show the hosted app.
+The deployed release also receives the focused browser checks described below.
 
 | Verification layer | Recorded result | What it establishes |
 |---|---|---|
@@ -602,14 +602,16 @@ configured Main model and fine-tuned Exit classifier. Screenshots show the hoste
 | Untrusted inputs | A fake credential, malicious profile instructions, and a corrupt PDF were exercised. These checks supplement deterministic guardrail tests. |
 | Scheduling | Availability, mixed job/time questions, ambiguous acceptance, invalid slot selection, rejection, and explicit confirmation exercised in isolation. |
 | Booking writes | Intentional fictitious bookings use disposable QA databases; no hosted booking created for verification or screenshots. |
+| Hosted release | Cold startup, off-topic redirection, privacy refusal, complete qualifications, three future appointments, review/cancel, PDF/introduction reset, fresh candidate context, polite closure, and a profile follow-up after job/calendar questions were checked in the deployed app. Read-only QA trace verification confirms the current Main prompt, pinned ModernBERT inference, and zero QA bookings. |
 | Startup recovery | Terminated checkpoint connections are replaced before reuse. Transient startup/read failures receive at most three attempts. Outage/retry checks preserve conversation IDs, pending request IDs, introductions, links and uploads; an uncertain booking response still produces one booking. Configuration/authentication failures stop without automatic retries or exposing error details. |
 
 </details>
 
 A run of synthetic scenarios does not establish production security or benchmark
 accuracy. Completeness/relevance observations are listed under
-[limitations](#limitations-and-next-steps). Startup recovery is verified against
-an isolated local database; hosted verification requires deploying this checkout.
+[limitations](#limitations-and-next-steps). Database outage/retry checks use an
+isolated local database. Hosted cold startup and the candidate-facing flows are
+verified separately, without disrupting the hosted database or creating bookings.
 
 ### Run checks
 
@@ -853,7 +855,6 @@ candidate exports, benchmark records, model weights, or secrets through this rep
 | Unrecognized or conflicting withdrawal statements can require explicit confirmation. Synthetic closure checks do not establish benchmark accuracy. | Extend development coverage using training/validation cases and keep the held-out test partition frozen. |
 | Checklist coverage supports recognized qualification headings and bullet lists within bounded indexed documents. Unstructured prose and unusual headings use ordinary RAG without exhaustive coverage validation. | Extend section-format coverage and review general-answer completeness. |
 | Scope classification uses Main's interpretation; mixed requests need separable recruitment clauses. Ambiguous wording may require rephrasing. | Extend development coverage while preserving verified intent, original-message consent and the frozen test split. |
-| The startup recovery in this checkout awaits hosted verification. | Deploy the checkout and repeat cold-start and idle-connection checks on Community Cloud. |
 | No candidate authentication, authorization, or cross-device recovery; file parsing is not a hostile-document sandbox. | Add access controls, retention policies, deployment hardening, and file isolation before real candidate use. |
 | LinkedIn links are references; invitation sending and automatic calendar extension are absent. | Add integrations only with explicit scope, access, and recruiter approval. |
 | The benchmark and saved report inputs are private, so a new checkout cannot reproduce those outputs without authorized data access. | Supply approved private inputs or use the public fictitious fixtures for workflow checks. |
