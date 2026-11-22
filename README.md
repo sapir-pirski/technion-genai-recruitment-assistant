@@ -36,7 +36,7 @@ A recruitment conversation powered by one Main Agent and three specialist adviso
 | [About the project](#about-the-project) | [Architecture](#architecture) | [Project structure](#project-structure) |
 | [Features](#features) | [Configuration](#configuration) | [Operations](#operations) |
 | [Getting started](#getting-started) | [Data and storage](#data-and-storage) | [Deployment](#deployment) |
-| [Screenshots](#screenshots) | [Evaluation](#evaluation) | [Limitations](#limitations-and-next-steps) |
+| [Screenshots](#screenshots) | [Evaluation](#evaluation) | [Limitations](#limitations) |
 | [Usage](#usage) | [Testing and live verification](#testing-and-live-verification) | [Contributing](#contributing) |
 | [Code example](#code-example) | [Evaluation notebook](tests/test_evals.ipynb) | [Contact](#contact) · [People and license](#people-and-license) |
 
@@ -473,30 +473,45 @@ The raw benchmark and contact metadata stay private; they are not screenshot mat
 
 ### Held-out benchmark
 
-Documentation updated **November 22, 2026**. Saved results are in the executed
-[evaluation notebook](tests/test_evals.ipynb). The benchmark contains 15 conversations
-and 59 labeled recruiter turns. Splits are by complete conversation: nine training,
-three validation, and three test conversations. The held-out test has 11 labeled
-turns, including eight candidate-response turns.
+Evaluated on **November 22, 2026** with the **deployed model configuration:
+GPT-4o mini Main + fine-tuned ModernBERT Exit**. The executed
+[evaluation notebook](tests/test_evals.ipynb) presents accuracy, confusion matrices,
+classification reports and failures. It reads the
+[aggregate results and provenance](data/evaluation_summary.json) offline, without
+credentials, private benchmark files, PostgreSQL or model API calls.
 
-| Evaluation | Correct / evaluated | Accuracy | Execution failures |
+The frozen benchmark contains **15 conversations and 59 labeled recruiter turns**.
+Whole conversations belong to separate partitions: nine training conversations
+(36 turns), three validation (12 turns), and three test (11 turns). The test has
+three opening turns and **eight candidate-response turns**. Each prediction uses
+the conversation prefix and its reference timestamp.
+
+| Current measurement · November 22 | All 11 turns | Eight candidate responses | Execution failures |
 |---|---:|---:|---:|
-| Main workflow with prompted OpenAI Exit · all turns | 6 / 11 | 54.5% | 0 |
-| Main workflow with prompted OpenAI Exit · candidate-response turns | 3 / 8 | 37.5% | 0 |
-| Prompted Exit · GPT-5 nano | 10 / 11 | 90.9% | 0 |
-| Fine-tuned Exit · ModernBERT | 9 / 11 | 81.8% | 0 |
+| **Main + deployed ModernBERT Exit** | **5 / 11 · 45.5%** | **2 / 8 · 25.0%** | 0 |
+| Fine-tuned Exit, evaluated independently | 9 / 11 · 81.8% | 6 / 8 · 75.0% | 0 |
 
-> **Reading these results:** The Main scores use the prompted OpenAI Exit baseline.
-> A held-out Main evaluation for the deployed ModernBERT combination is still required.
+The measurement uses the deployed model configuration with isolated SQL state.
+It measures action-label agreement on conversation prefixes. Hosted UI behavior,
+booking correctness and answer quality have separate verification methods.
 
-The classifier comparison uses the same held-out partition. ModernBERT's two errors
-are false `end` recommendations, and its
-confusion matrix is `[[6, 2], [0, 3]]` in `do_not_end`, `end` order.
+Main's confusion matrix is `[[4, 0, 0], [3, 1, 0], [1, 2, 0]]` in `continue`, `schedule`, `end` order.
+The fine-tuned Exit matrix is `[[6, 2], [0, 3]]` in `do_not_end`, `end` order, including
+2 false `end` recommendations. Independent advisor accuracy and
+Main's final action accuracy measure different decisions. Clear withdrawals with
+some polite prefixes can receive another confirmation. This is a known closure
+validation limitation.
 
-These results cover only three held-out conversations. Historical recruiter calendar
-state and verified slot IDs are unavailable, so action-label agreement does not
-establish booking correctness. Benchmark measurements, live synthetic checks, and
-mocked automated tests answer different questions.
+Only three held-out conversations are available; turns are correlated. Calendar
+state, verified slot IDs and booking receipts are unavailable in benchmark prefixes.
+Evaluation uses an empty isolated calendar and in-memory checkpoints. Action-label
+agreement does not establish booking correctness, answer completeness or security. Failures remain in the
+denominator. Synthetic workflow checks and live UI checks are separate measurements.
+
+Evaluated source commit: `92a477f877ba9d86cef0488c17704eff26b37843`. The Main prompt SHA-256 is
+`e4cba7efe68794740268612b5ac014b23ffc1b2ff259a940c3219582094bc135`. Dataset SHA-256:
+`94e925f72a43958a90743e477051ae0d053bfb63a11b3f07ffcb4b4126389830`. The aggregate export records model policy,
+all prompt identities, source report hashes and measurement timestamps.
 
 ### Fine-tuning and reproducibility
 
@@ -508,6 +523,9 @@ The five-epoch run uses seed 42, batch size 4, AdamW with learning rate 0.00002,
 decay 0.01, and training-derived class weights. Validation macro F1 selects epoch 4
 (0.8992 macro F1, 11/12 validation accuracy). Test data is excluded from gradients,
 checkpoint selection, and export selection.
+
+Runtime ONNX SHA-256:
+`8bfb0c30560f6069412ff19210678ce1ca6f5c8b08b5db3fb92375c9ff631582`.
 
 Training and inference use role/content JSON with at most 12 recent messages,
 16,000 history characters, and 2,048 tokens. Phones, emails, and recognizable
@@ -538,12 +556,25 @@ Inference imports ONNX Runtime/tokenizers without PyTorch or Transformers.
 
 The authoritative supplied benchmark is loaded from its PostgreSQL dataset tables.
 `prepare-data` writes `data/processed/{manifest,train,validation,test}.json` with
-conversation grouping and dataset/source fingerprints. Notebook code reads saved
-reports and does not invoke model APIs; it can read private benchmark metadata locally.
+conversation grouping and dataset/source fingerprints. Fresh model inference
+requires authorized private data and runtime access. The notebook reads only
+`data/evaluation_summary.json` and redraws saved metrics and embedded PNGs offline.
+This aggregate export contains no conversation text, contacts or example IDs.
+
+Detailed reports are Git-ignored under
+`artifacts/evaluation-2026-11-22-deployed/`. The aggregate export records their
+SHA-256 hashes. Use a separate output directory for each measurement:
 
 ```bash
-python -m app.main evaluate --split test --task actions --exit-provider openai --output artifacts/actions_test_baseline.json
-python -m app.main evaluate --split test --task exit --exit-provider openai --output artifacts/exit_test_baseline.json
+RUN="artifacts/evaluation-$(date +%Y%m%d-%H%M%S)"
+python -m app.main evaluate --split test --task actions --exit-provider huggingface --output "$RUN/actions_test_huggingface.json"
+python -m app.main evaluate-exit-hf --split test --artifact artifacts/hf-exit/runtime --output "$RUN/exit_test_huggingface.json"
+```
+
+The quality judge and controlled workflow evaluator use independently authored
+fictitious fixtures. Invoke them explicitly:
+
+```bash
 python -m app.main evaluate --task workflow --input tests/fixtures/workflow_cases.json --output artifacts/workflow_evaluation.json
 python -m app.main evaluate --task quality --input tests/fixtures/quality_cases.json --output artifacts/quality_evaluation.json
 ```
@@ -555,13 +586,12 @@ issues, commits, screenshots, or external evaluation services.
 
 Main/Exit reports retain model policy, prompt identity, split, dataset fingerprint,
 failures, and confusion matrices. Failures receive no accuracy credit. Opening turns
-and candidate-response turns are reported separately. The notebook compares the
-prompted and fine-tuned Exit reports only when fingerprints and held-out rows match.
+and candidate-response turns are reported separately. The notebook presents Main
+and the fine-tuned Exit classifier, with model/data identities and measurement dates.
 
-Controlled workflow replay uses independently authored fictitious cases and isolated
-calendar state. Gold expectations stay outside model inputs. The saved six-case replay
-covers 15 steps, including consent, mixed questions, alternatives, and relative-date
-changes across a week boundary. It passes 15/15 steps.
+The controlled workflow evaluator uses six fictitious cases, 15 steps and isolated
+calendar state. Gold expectations stay outside model inputs. Scenarios cover consent,
+mixed questions, alternatives and relative-date resolution across a week boundary.
 
 The offline quality judge receives bounded question/answer/evidence packets rather
 than unrestricted database access. Grounding cannot be scored without adequate
@@ -609,7 +639,7 @@ The deployed release also receives the focused browser checks described below.
 
 A run of synthetic scenarios does not establish production security or benchmark
 accuracy. Completeness/relevance observations are listed under
-[limitations](#limitations-and-next-steps). Database outage/retry checks use an
+[limitations](#limitations). Database outage/retry checks use an
 isolated local database. Hosted cold startup and the candidate-facing flows are
 verified separately, without disrupting the hosted database or creating bookings.
 
@@ -683,6 +713,7 @@ assets/
   screenshots/            Deployed-app screenshots with fictitious details
 config/                   Selected posting policy and public PDF manifest
 data/jobs/                Eleven public input PDFs
+data/evaluation_summary.json  Aggregate saved metrics and model/data provenance
 .streamlit/config.toml    Theme and minimal toolbar
 tests/
   unit/                   Pure input, model, launcher, and document checks
@@ -847,17 +878,15 @@ candidate exports, benchmark records, model weights, or secrets through this rep
 
 </details>
 
-## Limitations and next steps
+## Limitations
 
-| Current limitation | Next step |
-|---|---|
-| Main benchmark agreement is 54.5% on only 11 held-out turns; verified historical calendar context is unavailable. | Diagnose errors on training/validation data and preserve the frozen test partition. |
-| Unrecognized or conflicting withdrawal statements can require explicit confirmation. Synthetic closure checks do not establish benchmark accuracy. | Extend development coverage using training/validation cases and keep the held-out test partition frozen. |
-| Checklist coverage supports recognized qualification headings and bullet lists within bounded indexed documents. Unstructured prose and unusual headings use ordinary RAG without exhaustive coverage validation. | Extend section-format coverage and review general-answer completeness. |
-| Scope classification uses Main's interpretation; mixed requests need separable recruitment clauses. Ambiguous wording may require rephrasing. | Extend development coverage while preserving verified intent, original-message consent and the frozen test split. |
-| No candidate authentication, authorization, or cross-device recovery; file parsing is not a hostile-document sandbox. | Add access controls, retention policies, deployment hardening, and file isolation before real candidate use. |
-| LinkedIn links are references; invitation sending and automatic calendar extension are absent. | Add integrations only with explicit scope, access, and recruiter approval. |
-| The benchmark and saved report inputs are private, so a new checkout cannot reproduce those outputs without authorized data access. | Supply approved private inputs or use the public fictitious fixtures for workflow checks. |
+- Current Main + ModernBERT agreement is 5 / 11 · 45.5%, or 2 / 8 · 25.0% excluding openings. Calendar/booking evidence is unavailable in benchmark prefixes.
+- Closure checks can ask to reconfirm a clear withdrawal when its polite wording is unrecognized. Synthetic closure checks do not establish benchmark accuracy.
+- Checklist coverage supports recognized qualification headings and bullet lists within bounded indexed documents. Unstructured prose and unusual headings use ordinary RAG without exhaustive coverage validation.
+- Scope classification uses Main's interpretation; mixed requests need separable recruitment clauses. Ambiguous wording may require rephrasing.
+- No candidate authentication, authorization, or cross-device recovery; file parsing is not a hostile-document sandbox.
+- LinkedIn links are references; invitation sending and automatic calendar extension are absent.
+- A fresh checkout can execute the saved-results notebook offline, but rerunning inference requires the private benchmark and model access.
 
 ## Contributing
 
