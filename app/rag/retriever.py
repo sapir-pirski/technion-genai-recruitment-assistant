@@ -1,7 +1,14 @@
 from langchain_openai import OpenAIEmbeddings
 
 from app.config import Settings
+from app.guardrails import reject
 from app.observability.tracing import EmbeddingClient
+from app.rag.qualifications import (
+    LABELS,
+    qualification_groups,
+    qualification_items,
+    select_qualifications,
+)
 from app.rag.store import PostgresVectorStore
 
 
@@ -25,7 +32,11 @@ class JobRetriever:
 
         self.settings = settings
         self.registry = JobRegistry(settings)
-        self.store = vectorstore(settings, engine=self.registry.engine)
+        try:
+            self.store = vectorstore(settings, engine=self.registry.engine)
+        except Exception:
+            self.registry.close()
+            raise
 
     def search(self, query: str, job_id=None) -> list[dict]:
         from app.ingestion.models import DEFAULT_JOB_ID
@@ -37,7 +48,7 @@ class JobRetriever:
         # Include more sections to distinguish required from preferred
         # qualifications while keeping short job descriptions within the model budget.
         docs = self.store.similarity_search(query, k=6, job_id=job_id, version_ids=versions)
-        return [
+        excerpts = [
             {
                 "id": doc.metadata["chunk_id"],
                 "job_id": doc.metadata["job_id"],
@@ -48,6 +59,30 @@ class JobRetriever:
             }
             for doc in docs
         ]
+        groups = qualification_groups(query)
+        complete = self.store.get(job_id=job_id, version_ids=versions, limit=257)
+        if len(complete["ids"]) > 256:
+            if not groups:
+                return excerpts
+            reject(
+                "qualification_coverage",
+                "retrieval",
+                "document_budget",
+                "The full qualification section needs recruiter review.",
+            )
+        ordered = [
+            {**metadata, "id": key, "text": text}
+            for key, text, metadata in zip(
+                complete["ids"], complete["documents"], complete["metadatas"], strict=True
+            )
+        ]
+        items = select_qualifications(query, qualification_items(ordered, set(LABELS)))
+        if items:
+            needed = {source for item in items for source in item["source_ids"]}
+            present = {row["id"] for row in excerpts}
+            excerpts.extend(row for row in ordered if row["id"] in needed - present)
+            excerpts[0]["qualification_items"] = items
+        return excerpts
 
     def close(self):
         self.registry.close()

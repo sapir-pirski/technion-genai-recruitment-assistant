@@ -84,7 +84,7 @@ class Settings(BaseSettings):
             return self.helper_model
         if operation in {"profile_extraction", "followups", "info_decision"}:
             return self.helper_model
-        if operation in {"main", "info", "scheduling", "chat_profile"}:
+        if operation in {"main", "info", "info_qualifications", "scheduling", "chat_profile"}:
             return self.chat_model
         raise ValueError("Unknown model operation")
 
@@ -93,6 +93,7 @@ class Settings(BaseSettings):
         for operation in (
             "main",
             "info",
+            "info_qualifications",
             "scheduling",
             "info_decision",
             "exit",

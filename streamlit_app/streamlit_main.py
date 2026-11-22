@@ -31,6 +31,7 @@ from streamlit_app.introduction import (
 )
 from streamlit_app.page_actions import render_page_actions
 from streamlit_app.presentation import response_text
+from streamlit_app.startup import StartupFailure, load_workspace
 from streamlit_app.ui_behaviors import render_ui_behaviors
 
 st.set_page_config(page_title="Recruitment assistant", page_icon=":material/forum:", layout="wide")
@@ -61,6 +62,7 @@ def queue_request(**request):
     if not st.session_state.get("pending_request"):
         st.session_state.pending_request = {
             "request_id": str(uuid4()),
+            "conversation_id": st.session_state.conversation_id,
             "context_inputs": context_snapshot(),
             **request,
         }
@@ -75,18 +77,22 @@ def submit_message():
         queue_request(text=message.strip())
 
 
-def reset_conversation():
-    # Recorded history and confirmed bookings remain in PostgreSQL.
-    st.session_state.conversation_id = str(uuid4())
+def clear_pending_request():
     for key in (
         "pending_request",
         "attempt_request",
         "request_failed",
         "review_slot_id",
-        "candidate_message",
         "pending_answer",
     ):
         st.session_state.pop(key, None)
+
+
+def reset_conversation():
+    # Recorded history and confirmed bookings remain in PostgreSQL.
+    st.session_state.conversation_id = str(uuid4())
+    clear_pending_request()
+    st.session_state.pop("candidate_message", None)
     clear_introduction_inputs()
 
 
@@ -451,6 +457,17 @@ def process_pending(service, selected_job, messages):
     pending = st.session_state.get("pending_request")
     if not pending:
         return
+
+    def is_current():
+        active = st.session_state.get("pending_request") or {}
+        return (
+            pending["conversation_id"] == st.session_state.conversation_id
+            and active.get("request_id") == pending["request_id"]
+            and active.get("conversation_id") == pending["conversation_id"]
+        )
+
+    if not is_current():
+        return
     attempt = st.session_state.pop("attempt_request", False)
     saved = any(
         row["role"] == "assistant" and row["request_id"] == pending["request_id"]
@@ -474,7 +491,11 @@ def process_pending(service, selected_job, messages):
                 progress = status_holder.status(status, expanded=False)
 
                 def report(event):
+                    if not is_current():
+                        return
                     if event.get("stage") == "answer_ready":
+                        if event.get("request_id") != pending["request_id"]:
+                            return
                         st.session_state.pending_answer = event
                         answer.markdown(event["result"]["response"])
                         progress.update(label=event["label"])
@@ -482,22 +503,18 @@ def process_pending(service, selected_job, messages):
                         progress.update(label=event["label"])
 
                 service.turn(
-                    st.session_state.conversation_id,
                     timezone=st.session_state.timezone,
                     job_id=selected_job,
                     progress=report,
                     **pending,
                 )
-                for key in (
-                    "pending_request",
-                    "request_failed",
-                    "review_slot_id",
-                    "pending_answer",
-                ):
-                    st.session_state.pop(key, None)
+                if not is_current():
+                    return
+                clear_pending_request()
                 st.rerun()
             except Exception:
-                st.session_state.request_failed = True
+                if is_current():
+                    st.session_state.request_failed = True
         if st.session_state.get("request_failed"):
             status_holder.empty()
             st.error(
@@ -531,40 +548,73 @@ def render_composer(closed, busy, started):
 
 def render():
     st.html(Path(__file__).with_name("styles.css"))
-    settings = load_settings()
+    try:
+        settings = load_settings()
+    except Exception as error:
+        log_event(
+            "service_initialization_failed",
+            level=logging.ERROR,
+            component="app.streamlit",
+            stage="settings",
+            error_code=type(error).__name__,
+        )
+        st.error("The assistant's configuration needs attention. Please contact the app owner.")
+        st.button("Retry startup", key="retry_startup")
+        if "conversation_id" in st.session_state:
+            render_introduction(True)
+        st.stop()
     if not settings.openai_api_key.get_secret_value().strip():
         st.error("Add OPENAI_API_KEY to .env or Streamlit secrets before starting the assistant.")
         st.stop()
     if "conversation_id" not in st.session_state:
         st.session_state.conversation_id = str(uuid4())
+    pending = st.session_state.get("pending_request")
+    if pending and pending.get("conversation_id") != st.session_state.conversation_id:
+        clear_pending_request()
     identity = hashlib.sha256(
         settings.model_dump_json().encode()
         + settings.openai_api_key.get_secret_value().encode()
         + settings.hf_token.get_secret_value().encode()
     ).hexdigest()
     try:
-        service = create_service(settings, identity)
-        state = service.state(st.session_state.conversation_id)
-        messages = service.conversations.messages(st.session_state.conversation_id)
-        jobs = sorted(
-            service.registry.list_jobs(collection=settings.index_collection),
-            key=lambda job: (job["job_id"] != DEFAULT_JOB_ID, job["company_name"], job["title"]),
-        )
-    except Exception as error:
-        log_event(
-            "service_initialization_failed",
-            level=logging.ERROR,
-            component="app.streamlit",
-            error_code=type(error).__name__,
-        )
-        st.error("The assistant is temporarily unavailable. Please try again shortly.")
+        with st.spinner("Loading the assistant…"):
+            status = st.empty()
+            workspace = load_workspace(
+                settings,
+                lambda: create_service(settings, identity),
+                st.session_state.conversation_id,
+                st.session_state.get("selected_job_id"),
+                job_downloads,
+                lambda attempt: status.info(
+                    f"Reconnecting to the assistant… (attempt {attempt}/3)"
+                ),
+            )
+            status.empty()
+    except StartupFailure as error:
+        status.empty()
+        if error.retryable:
+            st.error("The database is temporarily unavailable. Please retry in a moment.")
+        else:
+            st.error(
+                "The assistant could not start. Please contact the app owner to check its setup."
+            )
+        st.caption("Your conversation and pending request are kept while you retry.")
+        st.button("Retry startup", key="retry_startup")
+        # Streamlit removes widget values when their widgets disappear for a run.
+        # Keep uploads and unsent background inputs registered during an outage.
+        render_introduction(True)
         st.stop()
-    choices = {job["job_id"]: job for job in jobs}
+    service, state, messages, choices = (
+        workspace.service,
+        workspace.state,
+        workspace.messages,
+        workspace.choices,
+    )
     if not choices:
         st.info("No active positions are available. Please try again later.")
         st.stop()
     conversation_job = state.get("job_id")
-    if conversation_job and conversation_job not in choices:
+    if (conversation_job and conversation_job not in choices) or not workspace.job:
         st.info("This position is no longer active. Start a new conversation for another role.")
         st.button("Choose another position", on_click=reset_conversation)
         st.stop()
@@ -574,9 +624,7 @@ def render():
         st.session_state.selected_job_id = next(iter(choices))
     initialize_timezone(settings, state)
     selected_job = st.session_state.selected_job_id
-    job = service.registry.get_job(selected_job, collection=settings.index_collection)
-    logo = service.registry.company_logo(selected_job)
-    downloads = job_downloads(service, settings, job)
+    job, logo, downloads = workspace.job, workspace.logo, workspace.downloads
     busy = bool(st.session_state.get("pending_request"))
     started = bool(state or messages)
     closed = state.get("conversation_status") == "closed" and not busy

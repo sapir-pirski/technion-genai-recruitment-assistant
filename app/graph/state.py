@@ -36,6 +36,7 @@ class ConversationState(TypedDict, total=False):
     max_consultations: int
     consulted_tasks: list[str]
     turn_intent: dict
+    awaiting_opt_out_confirmation: bool
     routing_stop_reason: str | None
     routing_history: list[dict]
     input_kind: str

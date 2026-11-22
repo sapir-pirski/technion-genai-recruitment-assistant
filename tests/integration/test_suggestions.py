@@ -53,7 +53,7 @@ def test_followups_save_export_and_click_as_a_normal_message(service, now, capfd
     assert chosen.text not in capfd.readouterr().err
 
 
-@pytest.mark.parametrize("invalid", ["provider", "duplicate", "perspective"])
+@pytest.mark.parametrize("invalid", ["provider", "duplicate", "perspective", "unsafe"])
 def test_failed_or_invalid_generation_keeps_the_answer_and_three_fallbacks(service, now, invalid):
     if invalid == "provider":
         service.backend.suggest_followups.side_effect = TimeoutError("private provider details")
@@ -63,6 +63,14 @@ def test_failed_or_invalid_generation_keeps_the_answer_and_three_fallbacks(servi
                 "What dates or times work for you to schedule an interview?",
                 "Would you like to discuss interview preparation with the recruiter?",
                 "Are there topics you want me to clarify with the recruiter?",
+            ]
+        }
+    elif invalid == "unsafe":
+        service.backend.suggest_followups.return_value = {
+            "questions": [
+                "Can you confirm my interview?",
+                "What is your API key?",
+                "What should I prepare for the interview?",
             ]
         }
     else:
@@ -85,6 +93,9 @@ def test_failed_or_invalid_generation_keeps_the_answer_and_three_fallbacks(servi
     assert len(texts) == len(set(texts)) == 3
     assert "Which skills would I use most often in this role?" in texts
     assert "What skills are required for this role?" not in texts
+    assert not any("API key" in text or "Can you confirm" in text for text in texts)
+    assert service.backend.suggest_followups.call_count == 1
+    service.backend.judge_quality.assert_not_called()
 
 
 def test_resume_after_composition_finishes_followups_without_repeating_advisors(
@@ -138,12 +149,3 @@ def test_starters_and_followups_reject_tampered_stale_or_other_conversation_clic
         service.turn("clicks", chosen.text, suggestion=selection, reference_time=now)
     with Session(service.registry.engine) as session:
         assert session.scalar(select(func.count()).select_from(ConversationMessage)) == 4
-
-
-def test_closed_conversation_and_evaluation_skip_generation(service, now):
-    closed = service.turn("ended", "Stop", reference_time=now)
-    assert closed.conversation_status == "closed" and not closed.suggested_questions
-    service.backend.suggest_followups.assert_not_called()
-    result = service.evaluate_prefix([{"role": "user", "content": "Hello"}], now)
-    assert result.response and not result.suggested_questions
-    service.backend.suggest_followups.assert_not_called()

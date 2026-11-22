@@ -21,6 +21,8 @@ _fields = {
     "conversation_id",
     "request_id",
     "error_code",
+    "attempt",
+    "retryable",
     "duration_ms",
     "job_id",
     "source_id",

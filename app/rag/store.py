@@ -17,22 +17,26 @@ class PostgresVectorStore:
         initialize_database(self.engine)
         self.collection_id = settings.index_collection
 
-    def _query(self, *, ids=None, version_id=None, job_id=None):
+    def _query(self, *, ids=None, version_id=None, version_ids=None, job_id=None):
         query = select(RagChunk).where(RagChunk.collection_id == self.collection_id)
         if ids is not None:
             query = query.where(RagChunk.chunk_id.in_(ids))
         if version_id is not None:
             query = query.where(RagChunk.document_version_id == version_id)
+        if version_ids is not None:
+            query = query.where(RagChunk.document_version_id.in_(version_ids))
         if job_id is not None:
             query = query.where(RagChunk.job_id == job_id)
         return query
 
-    def get(self, *, ids=None, version_id=None, job_id=None, include=None):
+    def get(
+        self, *, ids=None, version_id=None, version_ids=None, job_id=None, include=None, limit=None
+    ):
         with Session(self.engine) as session:
             rows = session.scalars(
-                self._query(ids=ids, version_id=version_id, job_id=job_id).order_by(
-                    RagChunk.chunk_id
-                )
+                self._query(ids=ids, version_id=version_id, version_ids=version_ids, job_id=job_id)
+                .order_by(RagChunk.chunk_id)
+                .limit(limit)
             ).all()
             result = {
                 "ids": [row.chunk_id for row in rows],

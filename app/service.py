@@ -1,4 +1,6 @@
 import json
+import logging
+import math
 import threading
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -39,6 +41,18 @@ class ChatService:
     ):
         self.settings = settings
         configure_logging(settings.log_level)
+        self.registry = None
+        self.repository = None
+        self.retriever = None
+        self._checkpoint_pool = None
+        self._lock = threading.RLock()
+        try:
+            self._initialize(settings, backend, repository, retriever, checkpointer)
+        except Exception:
+            self.close()
+            raise
+
+    def _initialize(self, settings, backend, repository, retriever, checkpointer):
         self.registry = JobRegistry(settings)
         self.conversations = ConversationRepository(
             self.registry.engine, settings.conversation_export_path
@@ -54,24 +68,29 @@ class ChatService:
         self.repository.initialize()
         self.backend = backend if backend is not None else OpenAIBackend(settings)
         self.retriever = retriever or JobRetriever(settings)
-        self._checkpoint_pool = None
         if checkpointer is None:
+            timeout = min(10, settings.request_timeout)
             self._checkpoint_pool = ConnectionPool(
                 conninfo=settings.postgres_dsn,
                 min_size=1,
                 max_size=4,
-                kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
-                timeout=settings.request_timeout,
+                kwargs={
+                    "autocommit": True,
+                    "prepare_threshold": 0,
+                    "row_factory": dict_row,
+                    "connect_timeout": max(1, math.ceil(timeout)),
+                },
+                check=ConnectionPool.check_connection,
+                timeout=timeout,
+                reconnect_timeout=timeout,
                 open=True,
             )
-            self._checkpoint_pool.wait(timeout=settings.request_timeout)
+            self._checkpoint_pool.wait(timeout=timeout)
             checkpointer = PostgresSaver(self._checkpoint_pool)
             checkpointer.setup()
         self.graph = build_graph(
             self.backend, self.repository, self.retriever, checkpointer, self.profiles
         )
-        # Serializes requests within a worker; DB constraints also protect across workers.
-        self._lock = threading.RLock()
 
     def _config(self, conversation_id: str):
         return {
@@ -247,6 +266,7 @@ class ChatService:
             "consultation_count": 0,
             "max_consultations": self.settings.max_advisor_consultations,
             "turn_intent": {},
+            "awaiting_opt_out_confirmation": old.get("awaiting_opt_out_confirmation", False),
             "routing_stop_reason": None,
             "routing_history": [],
             "input_kind": "chat",
@@ -383,9 +403,22 @@ class ChatService:
         return TurnResult(**result["result"])
 
     def close(self):
-        if self._checkpoint_pool:
-            self._checkpoint_pool.close()
-        self.repository.engine.dispose()
-        self.registry.close()
-        if hasattr(self.retriever, "close"):
-            self.retriever.close()
+        # Also used after partial initialization. Attempt every cleanup even if
+        # one resource cannot close; never hide the original startup failure.
+        resources = [
+            self._checkpoint_pool.close if self._checkpoint_pool else None,
+            self.repository.engine.dispose if self.repository else None,
+            self.registry.close if self.registry else None,
+            getattr(self.retriever, "close", None),
+        ]
+        for close in resources:
+            if close is not None:
+                try:
+                    close()
+                except Exception as error:
+                    log_event(
+                        "resource_cleanup_failed",
+                        level=logging.ERROR,
+                        component="app.service",
+                        error_code=type(error).__name__,
+                    )

@@ -267,6 +267,13 @@ def test_chat_facts_corrections_confirmations_and_resume_are_durable(service, no
     profile = service.state("chat-facts")["candidate_profile"]
     assert chat_fact["fact_id"] in profile["verification"]["confirmed_fact_ids"]
     assert "Kubernetes" not in profile["sections"]["skills"]
-    stored = service.profiles.profile(service.state("chat-facts")["profile_version"], "chat-facts")
-    assert stored["data"] == profile
+    with Session(service.registry.engine) as session:
+        stored = session.scalar(
+            select(CandidateProfile).where(
+                CandidateProfile.profile_id == service.state("chat-facts")["profile_version"],
+                CandidateProfile.conversation_id == "chat-facts",
+            )
+        )
+        assert stored is not None and stored.data == profile
+        assert stored.is_current
     assert service.profiles.save_profile == save

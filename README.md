@@ -2,369 +2,150 @@
 
 <div align="center">
 
-<p><strong>TECHNION · GENAI FINAL PROJECT</strong></p>
+<img src="assets/readme-hero.png" alt="Paper illustration connecting a conversation, a document, and a checked calendar" width="100%">
+
+<p><sub>TECHNION · GENAI FINAL PROJECT</sub></p>
+
 <h1>Recruitment Assistant</h1>
-<p>A multi-agent assistant for job questions, candidate introductions, and recruiter-approved interviews.</p>
+
+<p><strong>Ask about the role. Share your background. Find an interview time.</strong><br>
+A recruitment conversation powered by one Main Agent and three specialist advisors.</p>
 
 <p>
-  <a href="https://technion-genai-recruitment-assistant.streamlit.app"><strong>Open the app</strong></a> ·
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#how-it-works">Architecture</a> ·
-  <a href="tests/test_evals.ipynb">Evaluation notebook</a> ·
-  <a href="TASK.md">Assignment</a>
+  <a href="https://technion-genai-recruitment-assistant.streamlit.app"><img src="https://img.shields.io/badge/Open_the_demo-Streamlit-255441?style=flat-square&amp;logo=streamlit&amp;logoColor=white" alt="Open the Streamlit demo"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.11%2B-255441?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python 3.11 or later"></a>
+  <a href="#architecture"><img src="https://img.shields.io/badge/Agents-LangGraph-D47C59?style=flat-square" alt="LangGraph agent orchestration"></a>
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/License-MIT-D47C59?style=flat-square" alt="MIT license for project code"></a>
 </p>
 
 <p>
-  <a href="requirements.txt"><img src="https://img.shields.io/badge/Python-3.11%2B-2563EB?style=flat-square&amp;logo=python&amp;logoColor=white&amp;labelColor=0F172A" alt="Python 3.11 and later"></a>
-  <a href="#how-it-works"><img src="https://img.shields.io/badge/Agents-LangGraph-2563EB?style=flat-square&amp;labelColor=0F172A" alt="Agents orchestrated with LangGraph"></a>
-  <a href="#reference-database"><img src="https://img.shields.io/badge/PostgreSQL-pgvector-0D9488?style=flat-square&amp;logo=postgresql&amp;logoColor=white&amp;labelColor=0F172A" alt="PostgreSQL with pgvector"></a>
-  <a href="LICENSE.md"><img src="https://img.shields.io/badge/License-MIT-0D9488?style=flat-square&amp;labelColor=0F172A" alt="MIT license for project code"></a>
+  <a href="#getting-started"><strong>Quick start</strong></a> ·
+  <a href="#screenshots">App preview</a> ·
+  <a href="#architecture">How it works</a> ·
+  <a href="#evaluation">Evaluation</a> ·
+  <a href="TASK.md">Assignment</a>
 </p>
 
 </div>
 
----
-
-## Overview
-
-This project explores a recruitment conversation for a Python Developer role.
-A Main Agent coordinates specialized advisors to answer questions from job PDFs,
-gather candidate background, find approved interview times, and politely close
-the conversation when appropriate.
-
-| Capability | What the candidate gets |
-|---|---|
-| **Job-grounded answers** | Answers scoped to the selected role, with PDF and page references. |
-| **Candidate context** | An introduction, a LinkedIn reference, and PDF/DOC/DOCX/TXT uploads read with the next message. |
-| **Interview scheduling** | Up to three available appointments in the browser's timezone, with explicit confirmation. |
-| **Conversation continuity** | Durable messages, profile facts, booking receipts, and graph checkpoints in one database. |
-| **Traceable decisions** | Advisor decisions, latency, model usage, and JSON conversation exports. |
-
-The stack is **Streamlit · LangGraph / LangChain · OpenAI · PostgreSQL / pgvector**.
-A locally fine-tuned **ModernBERT** classifier supplies Exit advice on the training
-machine. The deployed app uses the prompted OpenAI Exit baseline.
-
-## Quick start
-
-Use macOS, Linux, or WSL with an OpenAI API key and a hosted PostgreSQL database
-that supports pgvector. The launcher prepares Python and the project environment.
-
-```bash
-git clone https://github.com/sapir-pirski/technion-genai-recruitment-assistant.git
-cd technion-genai-recruitment-assistant
-cp -n .env.example .env
-# Edit .env and enter your credentials.
-./run-full-project.sh
-```
-
-| Variable in `.env` | Used for |
-|---|---|
-| `OPENAI_API_KEY` | Chat agents, embeddings, and explicitly invoked OpenAI evaluations. |
-| `DATABASE_URL` | The shared hosted PostgreSQL/pgvector database, with TLS. |
-| `HF_TOKEN` | Downloading the base model for local training or the pinned private Exit artifact. |
-
-The app opens at **[localhost:8502](http://127.0.0.1:8502)** by default. The
-launcher checks Python 3.11+ (preferring 3.13), prepares `.venv`, installs missing
-requirements, checks LibreOffice, verifies local model files when activated, and
-initializes or reuses complete PDF indexes. New or changed PDFs need embedding
-calls. Startup does not scrape jobs, train models, or download trained weights.
-
-```bash
-./run-full-project.sh --status
-./run-full-project.sh --logs
-./run-full-project.sh --restart --no-browser
-./run-full-project.sh --stop
-```
-
-Keep `.env` private. Local classifier inference needs no HF token or network
-connection. A fresh checkout uses the prompted Exit baseline until a verified
-local model is explicitly trained and activated. For manual setup, Python repair,
-ports, and platform details, open the [launcher reference](#reference-installation).
-
-## Try a conversation
-
-Select a role, add background through **Introduce yourself**, and type a message
-or choose one of the three fixed starting questions. Details from all introduction
-tabs are read with the next message; later edits accompany a later message.
-
-| Try asking | Expected behavior |
-|---|---|
-| “What skills are required for this role?” | Retrieve the selected job's published description and cite the relevant pages. |
-| “Do you have anything next Friday morning?” | Resolve the date in context and search approved recruiter availability. |
-| “Please stop texting me.” | End the exchange without consulting scheduling. |
-
-LinkedIn URLs are validated references; the app does not scrape private profile
-content. Use the introduction or upload a profile document to supply readable
-background. The [candidate-intake reference](#reference-experience) describes
-format checks, consent boundaries, profile merging, and retry behavior.
-
-Only the assignment role has configured recruiter availability. The ten imported
-postings are reference roles; interview requests for them go through the employer.
-Choosing a time opens a review. A booking is confirmed only after explicit
-acceptance and a successful SQL receipt. Calendar invitations are not sent.
-
-## How it works
-
-```mermaid
-flowchart TD
-    UI["Candidate · Streamlit"] --> Main["Main Agent · LangGraph"]
-    Main <-->|"Job questions"| Info["Info Advisor"]
-    Main <-->|"Interview availability"| Scheduling["Scheduling Advisor"]
-    Main <-->|"Closure advice"| Exit["Exit Advisor"]
-    Info --> DB[("PostgreSQL + pgvector")]
-    Scheduling --> DB
-    Main -. "History and checkpoints" .-> DB
-    Main --> Reply["Continue · Schedule · End"]
-
-    classDef coordinator fill:#2563EB,stroke:#2563EB,color:#FFFFFF
-    classDef advisor fill:#EFF6FF,stroke:#BFDBFE,color:#0F172A
-    classDef storage fill:#ECFDF5,stroke:#0D9488,color:#0F172A
-    class Main coordinator
-    class Info,Scheduling,Exit advisor
-    class DB storage
-```
-
-Main consults advisors one at a time, reviews their results, and composes the
-candidate-facing reply. Profile intake and guardrails surround that loop;
-contextual follow-up questions are generated after the answer. Advisors cannot
-bypass booking consent, source-grounding checks, or closure safeguards.
-
-| Component | Responsibility | Model or tool |
-|---|---|---|
-| **Main** | Choose advisors and coordinate the next action. | GPT-4o mini |
-| **Info** | Decide whether information is needed; answer from selected-job evidence. | GPT-5 nano + GPT-4o mini + pgvector |
-| **Scheduling** | Interpret availability requests and call validated calendar functions. | GPT-4o mini + PostgreSQL |
-| **Exit** | Recommend `end` or `do_not_end`. | Local ModernBERT; prompted GPT-5 nano in the deployed app |
-
-One hosted Neon PostgreSQL database holds application state and vector retrieval:
-**22 tables · 11 job PDFs · 57 published chunks · 1,536-dimensional embeddings**.
-The native app, scheduled worker, and Community Cloud instance use that same
-database. Local model weights and private backup archives stay outside Git.
-
-See the [full workflow](#reference-workflow), [schema](#reference-database), and
-[logging and tracing reference](#reference-observability) for implementation details.
-
-## Evaluation
-
-Recorded on **8 November 2026**.
-
-The supplied benchmark contains **15 conversations and 59 labeled recruiter
-turns**, split by complete conversation into 9 training, 3 validation, and 3 test
-conversations. The held-out test below contains 11 recruiter turns.
-
-| Held-out evaluation | Correct / evaluated | Accuracy | Execution failures |
-|---|---:|---:|---:|
-| Main workflow · all recruiter turns | 6 / 11 | 54.5% | 0 |
-| Main workflow · candidate-response turns | 3 / 8 | 37.5% | 0 |
-| Prompted Exit Advisor · GPT-5 nano | 10 / 11 | 90.9% | 0 |
-| Fine-tuned Exit Advisor · ModernBERT | 9 / 11 | 81.8% | 0 |
-
-**The fine-tuned classifier did not outperform the prompted baseline.** Its two
-errors are false `end` recommendations. Checkpoint selection uses validation macro
-F1; test conversations are excluded from training and model selection.
-These are exploratory results from three held-out conversations. Historical
-calendar state and booking receipts were unavailable, so action-label agreement
-does not establish booking correctness.
-
-The executed **[evaluation notebook](tests/test_evals.ipynb)** includes modern
-annotated confusion matrices, class metrics, baseline comparisons, and error IDs.
-It reads saved reports without making model API calls or exposing conversation text.
-A separate controlled replay passed 15 turns across six fictitious cases. The
-repository includes 124 Python tests and five browser-control checks.
-
-| Runtime | Exit Advisor | Model storage |
-|---|---|---|
-| **Locally activated training machine** | Fine-tuned ModernBERT, using ONNX Runtime on CPU. | Git-ignored `artifacts/hf-exit/`; no model upload. |
-| **Community Cloud** | Fine-tuned ModernBERT, using local ONNX inference. | Three model files downloaded from the pinned private Hugging Face repository. |
-| **Unconfigured fresh checkout** | Prompted OpenAI baseline. | Configure trained model files or a pinned repository to use ModernBERT. |
-
-Training, data isolation, model integrity and evaluation limitations are documented
-in the [fine-tuning reference](#reference-evaluation).
-
-## Submission verification
-
-Verified on **22 November 2026** using fictitious candidates and a disposable QA
-database. Production interview slots and bookings are excluded from booking tests.
-
-| Check | Evidence |
-|---|---|
-| Main Agent and three advisors | LangGraph routing and Continue / Schedule / End checks; 15/15 controlled replay steps across six cases. |
-| Fine-tuned Exit Advisor | Locally activated ModernBERT; training and held-out comparison in the notebook. Hugging Face is approved for this assignment. The public app loads the same trained artifact from its pinned private repository. |
-| PDF embedding and retrieval | All 11 PDFs / 22 pages validate; 57 published PostgreSQL/pgvector chunks, using 1,536-dimensional OpenAI embeddings. |
-| SQL function calling | Three future choices, browser timezone, date interpretation, review/cancel, explicit confirmation and durable booking receipts. |
-| Candidate intake | Automatic combined intake; PDF, DOC, DOCX and TXT read successfully. Invalid type, corrupt PDF and files over 5 MB are rejected. |
-| Guardrails | Untrusted profile instructions, credential redaction, no booking without consent, opt-outs and reference-role employer handoff. |
-| Browser controls | Original-PDF download matches its source bytes; print-to-PDF preserves the answer; recording downloads locally and releases capture. |
-| Interface | Fixed starters, contextual questions, source references, role/company/location selection and a 390 × 844 responsive check. |
-| Persistence and diagnostics | Conversation JSON, checkpoint recovery, duplicate-request protection, trace links and token accounting verified. |
-| Automated checks | 124 Python cases and five browser-control cases covered. Hosted-database UI checks allow 60 seconds for completion; these are behavior checks, not latency benchmarks. |
-| Repository and setup | Virtual environment, one requirements file, secret-only environment template, launcher, license, contributors and task documentation. |
-| Deployment | [Streamlit Community Cloud](https://technion-genai-recruitment-assistant.streamlit.app) with hosted PostgreSQL/pgvector. |
-
-The held-out action scores above are small-sample label agreement, with unavailable
-historical calendar context; they do not establish production accuracy. Live test
-turns took roughly 11–56 seconds including initialization, model calls and hosted
-storage. LinkedIn links remain references, calendar invitations are not sent, and
-the trained classifier stays on the local training machine.
-
 <details>
-<summary><strong>Interface screenshots from the local QA build</strong></summary>
+<summary><strong>Explore the documentation</strong></summary>
 
-The screenshots use public job descriptions and fictitious candidate details.
-
-| Job description | Candidate upload |
-|---|---|
-| ![Complete job description with headings and bullets](assets/screenshots/job-description.png) | ![Fictitious PDF selected for automatic intake](assets/screenshots/upload.png) |
-
-| Conversation | Interview review |
-|---|---|
-| ![Sourced answer with distinct required skills](assets/screenshots/conversation.png) | ![Timezone-aware appointment review requiring confirmation](assets/screenshots/interview-review.png) |
-
-![Clean conversation print preview](assets/screenshots/print-preview.png)
+| Try and run | Understand and verify | Maintain and contribute |
+|---|---|---|
+| [About the project](#about-the-project) | [Architecture](#architecture) | [Project structure](#project-structure) |
+| [Features](#features) | [Configuration](#configuration) | [Operations](#operations) |
+| [Getting started](#getting-started) | [Data and storage](#data-and-storage) | [Deployment](#deployment) |
+| [Screenshots](#screenshots) | [Evaluation](#evaluation) | [Limitations](#limitations-and-next-steps) |
+| [Usage](#usage) | [Testing and live verification](#testing-and-live-verification) | [Contributing](#contributing) |
+| [Code example](#code-example) | [Evaluation notebook](tests/test_evals.ipynb) | [Contact](#contact) · [People and license](#people-and-license) |
 
 </details>
 
-## Project layout
+## About the project
 
-```text
-README.md                 Setup, architecture, data, operations, evaluation, deployment
-TASK.md                   Assignment requirements
-app/
-  main.py                 CLI entry point
-  config.py, schemas.py   Settings and contracts
-  calendar.py             Approved availability windows and calendar management commands
-  service.py              Shared application service
-  guardrails.py           Input, model-context, tool-consent and output checks
-  profiles.py             Bounded PDF/DOC/DOCX/TXT readers and grounded profile merging
-  suggestions.py          Fixed questions, bounded context and contextual fallback questions
-  graph/, agents/         Profile intake, Main/advisors, composition and follow-up generation
-  prompts/, tools/        Role instructions and validated calendar functions
-  storage/                Calendar, sources/profiles, conversation history and JSON export
-  observability/          Structured diagnostics, execution spans and token usage
-  rag/, ingestion/        Retrieval, PDFs, source collection, company logos and indexes
-  fine_tuning/            Local ModernBERT training, ONNX export and training data
-  evaluation/             Dataset preparation, labeled metrics, offline quality judge and reports
-streamlit_app/            Chat UI, profile inputs, presentation helpers, styles and browser controls
-assets/screenshots/       Interface evidence from fictitious QA scenarios
-.streamlit/config.toml    Single light theme and minimal native toolbar
-config/                   Selected sources and centralized job/PDF manifest
-data/jobs/                The 11 input PDFs, including the assignment
-tests/                    Automated tests and evaluation notebook
-  fixtures/quality_cases.json  Independently authored fictitious quality packets
-  fixtures/workflow_cases.json Controlled multi-turn booking cases
-ops/                      Venv launcher support, daily scheduling and PDF verification
-requirements.txt          All pinned Python dependencies
-packages.txt              LibreOffice system package for Streamlit Community Cloud
-run-full-project.sh       Python/venv setup, dependency checks, bootstrap and app launch
-```
+An academic proof of concept for the recruitment workflow in [TASK.md](TASK.md).
+The Main Agent talks with a candidate, consults **Info**, **Scheduling**, and **Exit**
+advisors, and chooses **Continue**, **Schedule**, or **End**. Streamlit provides the
+interface in place of SMS.
 
-The ignore rules cover the existing `.env`, `.venv/`, Python/test/lint caches,
-`.DS_Store`, generated datasets in `data/processed/`, and generated files under
-`artifacts/`, including local models, backups, logs and exports. Source PDFs in
-`data/jobs/` and `.env.example` remain tracked. PostgreSQL runtime
-data is retained in Neon.
-`artifacts/conversations.json` is the generated conversation snapshot.
-`artifacts/ingestion/.gitkeep` preserves the scheduler's log directory in the repository.
+The stack combines **Streamlit · LangChain/LangGraph · OpenAI · ModernBERT ·
+PostgreSQL/pgvector**. The catalog contains the assignment's Python Developer role
+and ten selected public reference postings. Recruiter-approved scheduling is available
+for the assignment role.
 
-## Reference
+> **Project status:** This README describes the local checkout. Its startup recovery
+> and conversation fixes are locally verified and await a Community Cloud release.
+> The [live demo](https://technion-genai-recruitment-assistant.streamlit.app) and the
+> screenshots show the hosted application. See [verification](#testing-and-live-verification)
+> for the scope of each check.
 
-The operational documentation stays in this README. Expand a topic for commands,
-contracts, recovery behavior, and implementation details.
+## Features
 
-| Start or develop | Understand or operate |
-|---|---|
-| [Installation and launcher](#reference-installation) | [Full agent workflow](#reference-workflow) |
-| [Settings, models, and prompts](#reference-models) | [Guardrails](#reference-guardrails) |
-| [Candidate intake and interface](#reference-experience) | [Database tables and columns](#reference-database) |
-| [Recruiter calendar](#reference-calendar) | [Conversation history, logs, and traces](#reference-observability) |
-| [Fine-tuning and labeled evaluation](#reference-evaluation) | [PDF sources and ingestion](#reference-ingestion) |
-| [Automated checks](#reference-tests) | [Daily synchronization](#reference-scheduling) |
-| [Answer-quality judge](#reference-quality) | [Deployment and verification](#reference-deployment) |
+<table>
+<tr>
+<td width="26%"><strong>Ask with evidence</strong></td>
+<td>Explore the selected role's qualifications and responsibilities, with references to its PDF.</td>
+</tr>
+<tr>
+<td><strong>Bring your background</strong></td>
+<td>Add an introduction, a LinkedIn reference, or a profile document to your conversation.</td>
+</tr>
+<tr>
+<td><strong>Review before booking</strong></td>
+<td>Compare available times and timezones, then explicitly confirm the appointment you choose.</td>
+</tr>
+</table>
 
-<a id="reference-installation"></a>
 <details>
-<summary><strong>Installation and launcher</strong></summary>
+<summary><strong>All capabilities</strong></summary>
 
-### Install and run
+| Capability | Behavior |
+|---|---|
+| Job questions | Retrieve evidence from the selected role's PDF and display page/source references. Unspecified salary or policies are referred to a recruiter. |
+| Candidate background | Combine an introduction, LinkedIn reference, and PDF/DOC/DOCX/TXT profile document with the next chat message. |
+| Interview scheduling | Interpret dates and timezones, search SQL availability, and offer up to three matching appointments or labeled alternatives. |
+| Booking consent | Choosing a time opens a review. Explicit acceptance and a successful SQL booking receipt establish confirmation. |
+| Conversation continuity | Persist messages, profile evidence, request receipts, and graph checkpoints. Repeated requests reuse durable results. |
+| Follow-up questions | Show fixed starters and contextual questions; validated local fallbacks handle failed generation. |
+| Browser controls | Download the original job PDF, print the conversation, or record a user-selected screen/tab locally. |
+| Diagnostics | Record structured logs, advisor/tool traces, token usage, and dated cost estimates without raw prompts in technical logs. |
 
-Clone the project, copy the environment template, and enter your credentials:
+</details>
+
+## Getting started
+
+Have an **OpenAI API key** and a **hosted PostgreSQL/pgvector database with TLS**
+ready. The Bash launcher supports macOS, Linux, and WSL; Python 3.11+ is supported
+and 3.13 is preferred.
 
 ```bash
 git clone https://github.com/sapir-pirski/technion-genai-recruitment-assistant.git
 cd technion-genai-recruitment-assistant
 cp -n .env.example .env
-# Edit .env, then run:
+# Enter your credentials in .env.
 ./run-full-project.sh
 ```
 
-Both `.env` and `.env.example` contain exactly three variables:
-
-| Variable | Purpose |
+| Credential | Purpose |
 |---|---|
-| `OPENAI_API_KEY` | OpenAI access for agents, embeddings and explicitly invoked evaluations |
-| `DATABASE_URL` | The shared hosted PostgreSQL/pgvector connection, with TLS |
-| `HF_TOKEN` | Hugging Face authentication for local base-model training downloads and the private Cloud artifact |
+| `OPENAI_API_KEY` | Chat agents, embeddings, and explicitly invoked OpenAI evaluations. |
+| `DATABASE_URL` | Hosted PostgreSQL/pgvector connection with `sslmode=require` or stronger verification. |
+| `HF_TOKEN` | Authenticated model downloads for training or the configured private runtime artifact. |
 
-The selected Hugging Face model is `answerdotai/ModernBERT-base`, fine-tuned for
-the Exit Advisor's `end` / `do_not_end` classification. Training runs locally;
-inference uses local ONNX files. Community Cloud downloads only the weights,
-tokenizer and checksum manifest from the pinned private repository. Candidate
-history is never sent to Hugging Face; the read token stays in deployment secrets.
-
-Keep `.env` private. Use the same database connection as Community Cloud, with
-`sslmode=require` or stronger verification. Startup rejects loopback database hosts.
-If `.env` is missing, the launcher creates it with owner-only permissions and stops
-so you can fill it in. Existing credentials are never replaced.
-
-The launcher checks Python 3.11+ (preferring 3.13), creates or repairs `.venv`,
-installs missing or changed dependencies from `requirements.txt`, checks LibreOffice,
-validates credentials and published PDF indexes, starts Streamlit and opens the
-browser after HTTP readiness. Healthy launches reuse the venv and dependencies.
-An activated local Exit classifier is checked for compatible metadata and file
-checksums before startup. Activation or model identity changes restart the managed
-app. This check does not train, download model weights, or require a Hugging Face
-token for local inference; machines without local activation use the prompted baseline.
-Only new or changed PDFs require embedding calls; ready indexes skip ingestion.
-Online job scraping and model training do not run during startup.
-
-If Python is missing, the script uses the official uv installer from
-`https://astral.sh/uv/install.sh` and installs project-managed Python 3.13 under
-`artifacts/launcher/`. `PYTHON_BIN=python3.13` selects a working interpreter.
-An incomplete venv is preserved under `artifacts/launcher/venv-backup-*` before
-replacement. Missing pip is repaired with `ensurepip`; installed package versions,
-environment markers, requested extras, direct wheel versions and `pip check`
-determine whether installation is needed without network access. Packages are installed
-only inside the project venv.
-
-Missing LibreOffice is installed through Homebrew on macOS or apt/dnf on supported
-Linux systems. Homebrew must already be installed; Linux installation may need the
-system administrator prompt. Other platforms receive a manual setup instruction.
-Install the converter before processing DOC uploads; all supported document readers
-are checked by `python -m app.main doctor`.
-
-The app runs in the background at **http://127.0.0.1:8502** by default. A healthy
-managed process and its port are reused. An occupied default port selects the next
-free port; an explicit `--port` fails clearly when another process owns it.
-The launcher checks PID, process start time and command identity before stopping
-anything. It leaves unrelated applications alone. Changed app sources or repaired
-dependencies restart the managed process.
+The app opens at **[localhost:8502](http://127.0.0.1:8502)**. The launcher prepares or
+repairs `.venv`, installs missing dependencies from the single `requirements.txt`,
+checks LibreOffice and the selected model, then reuses or initializes PDF indexes.
+New or changed PDFs require embedding API calls. Startup does not run model training
+or collect online job postings. Configured pinned runtime files are downloaded and
+cached when needed; inference uses local files.
 
 ```bash
-./run-full-project.sh --no-browser
-./run-full-project.sh --port 8503
 ./run-full-project.sh --status
 ./run-full-project.sh --logs
 ./run-full-project.sh --restart --no-browser
 ./run-full-project.sh --stop
 ```
 
-`--no-browser` supports unattended use; headless hosts print the URL. Browser
-opening follows HTTP readiness. Stop affects only the managed UI process; Neon and
-local source files remain intact. State and owner-only logs live under
-`artifacts/launcher/`. `--server.port` remains an alias for `--port`; additional
-Streamlit arguments are forwarded to the server.
+`--port 8503` selects a port; an occupied default chooses the next free port.
+`--no-browser` supports headless use. Source/configuration changes or repaired
+dependencies restart the managed process. Stop affects only that process and
+preserves files and hosted data. Logs and process state are in `artifacts/launcher/`.
 
-For manual setup:
+<details>
+<summary><strong>Prerequisites and optional dependencies</strong></summary>
+
+- macOS, Linux, or WSL for the Bash launcher; Python 3.11+ is supported and 3.13 is preferred.
+- An OpenAI API key with access to the configured chat and embedding models.
+- Hosted PostgreSQL with pgvector, TLS, and permission to initialize the application schema.
+- LibreOffice for legacy `.doc` uploads. The launcher installs it on supported systems;
+  macOS requires Homebrew and Linux installation may require administrator access.
+- Access to the private trained-model repository only when using that artifact source.
+
+</details>
+
+<details>
+<summary><strong>Manual installation and launcher troubleshooting</strong></summary>
 
 ```bash
 python3.13 -m venv .venv
@@ -377,1671 +158,748 @@ python -m app.main bootstrap --if-needed
 python -m streamlit run streamlit_app/streamlit_main.py --server.port 8502
 ```
 
-A manually started foreground process stops with Ctrl+C. On Windows, activate the
-venv with `.venv\Scripts\activate`; automatic Bash setup targets macOS/Linux/WSL.
-All CLI commands below can use the activated venv or the `.venv/bin/python` binary.
-The application, ingestion worker and Community Cloud share the hosted database.
+On Windows, activate with `.venv\Scripts\activate`; use WSL for the Bash launcher.
+A manually started process stops with Ctrl+C. The local app uses the same hosted
+PostgreSQL service as Cloud; the launcher rejects loopback application database URLs.
+Disposable local databases are supported by the test suite.
+
+`PYTHON_BIN=python3.13` selects an interpreter. If Python is unavailable, the launcher
+uses the official uv installer and stores a managed interpreter under
+`artifacts/launcher/`. An incomplete environment is preserved there before repair.
+Dependency readiness checks installed versions, markers, extras, direct-wheel versions,
+and `pip check` without downloading packages. Installation stays inside `.venv`.
+
+The launcher creates a missing `.env` from `.env.example` with owner-only permissions
+and stops for credential entry. It never replaces an existing `.env` or resets a
+database. Model verification fails clearly when activation, checksums, or repository
+access are invalid. Inspect `artifacts/launcher/launcher.log` and `--logs` after errors.
 
 </details>
 
-<a id="reference-models"></a>
+## Screenshots
+
+Real app screens, captured from the **deployed Streamlit app on November 22, 2026**.
+Candidate details are fictitious. The interview view shows review before confirmation;
+no hosted booking was created for these images. The cover illustration is decorative.
+
+<p align="center">
+  <a href="assets/screenshots/conversation.png"><img src="assets/screenshots/conversation.png" alt="A candidate's job question with a sourced answer and follow-up suggestions" width="780"></a>
+  <br><sub>A sourced job answer, candidate context, and follow-up questions in one conversation.</sub>
+</p>
+
 <details>
-<summary><strong>Settings, model routing, and prompt contracts</strong></summary>
+<summary><strong>Explore the job description, profile upload, booking review, and print view</strong></summary>
 
-### Configuration and usage
+Click an image to view it at full size.
 
-Configure application behavior in the `Settings` class in
-[app/config.py](app/config.py). Defaults are not repeated in the environment files.
-
-| Setting | Default or behavior |
+| Read the role | Add your background |
 |---|---|
-| `chat_model` | `gpt-4o-mini` for Main planning, cited job answers, scheduling tool calls and chat-profile revisions |
-| `helper_model` | `gpt-5-nano` for Info classification, prompted OpenAI Exit baseline, profile extraction and follow-up questions |
-| `judge_model` | `gpt-4o-mini` for explicitly invoked offline quality evaluation |
-| `exit_provider` | `huggingface` when this machine has an explicit local activation receipt; otherwise `openai` |
-| `hf_exit_local_path` | `artifacts/hf-exit/runtime/`; local ONNX weights, tokenizer and integrity manifest |
-| `embedding_model` / `embedding_dimensions` | `text-embedding-3-small` / `None` uses the model's default dimensions |
-| `business_timezone` | `UTC` fallback when browser timezone detection is unavailable |
-| `request_timeout` / `max_retries` | 30 seconds / 2 retries |
-| `max_output_tokens` / `model_temperature` | 1500 / 0.0 for GPT-4o mini; operation-specific limits also apply |
-| `job_data_path` | `data/`; PDF inputs are its `jobs/` child |
-| `job_sources_path` / `job_manifest_path` | `config/job_sources.json` / `config/job_corpus_manifest.json` |
-| `ingestion_report_path` | `artifacts/ingestion/` |
-| `conversation_export_path` / `log_level` | `artifacts/conversations.json` / `INFO` |
-| `dataset_version` | `assignment-v1`; verified benchmark version read from PostgreSQL |
-| `max_advisor_consultations` | 3 advisor visits per user turn; bounds the Main/Advisor loop |
-| `corpus_limit` | 10 selected online postings; manually added PDFs are not limited by this setting |
-| `chunk_size` / `chunk_overlap` / `pipeline_version` | 900 / 120 characters / `jobs-v1` |
+| [![Full job description](assets/screenshots/job-description.png)](assets/screenshots/job-description.png) | [![Fictitious PDF profile upload](assets/screenshots/upload.png)](assets/screenshots/upload.png) |
 
-Restart the app or notebook kernel after changing configuration. Model access
-depends on your account. Chat, retrieval queries, document embeddings and evaluation
-can incur API usage charges. Local training uses the host’s CPU and memory.
-
-`Settings.model_policy()` is the single operation-to-model policy. Main planning,
-Info answers, Scheduling and chat-profile revisions use GPT-4o mini. The independent
-Info decision, source fact extraction and three-question generation use GPT-5
-nano. The prompted OpenAI Exit baseline also uses nano; the locally activated
-Exit Advisor uses its fine-tuned ModernBERT classifier instead. Nano uses
-`reasoning_effort="low"` for Exit classification and profile extraction, and
-`"minimal"` for Info decisions and follow-ups, and omits temperature. Generative OpenAI requests use
-`max_completion_tokens`: Exit is capped at 512, Info decisions at 1,024, follow-ups at
-768, and planning, answers, scheduling and profile extraction at 1,500; lowering
-`max_output_tokens` lowers these caps too. Completion limits include reasoning
-tokens, so a request can exhaust its budget before returning a usable answer;
-see [OpenAI's reasoning-token guidance](https://developers.openai.com/api/docs/guides/reasoning#controlling-costs).
-Changing model families requires checking their supported parameters.
-There is no automatic escalation to a more expensive model. API failures retain
-the existing error/retry behavior; invalid follow-ups retain their local fallback.
-The Main/advisor loop, SQL tool validation, explicit booking confirmation and
-source-grounding checks remain in force. Final reply assembly is Python code.
-
-Prompts live in `app/prompts/`, with one file per task. GPT-4o mini receives system
-instructions with explicit decision rules, field meanings and targeted examples.
-GPT-5 nano receives developer instructions with concise goals and constraints;
-it is not asked to reveal reasoning. Context JSON or profile text is sent in a
-separate user message. Examples are independently authored and do not use the
-stored benchmark. This follows OpenAI's
-[prompt guidance](https://developers.openai.com/api/docs/guides/prompt-engineering)
-and [reasoning guidance](https://developers.openai.com/api/docs/guides/reasoning-best-practices).
-
-| Prompt | Default model | Purpose and important rules |
-|---|---|---|
-| `main.txt` | GPT-4o mini | Main's routing priorities, first advisor consultation, mixed requests, profile corrections and bounded follow-up consultations |
-| `scheduling.txt` | GPT-4o mini | One calendar call when needed; no invented date preferences, AM/PM or acceptance; SQL remains authoritative |
-| `info.txt` | GPT-4o mini | Under-100-word answers grounded in supplied excerpts; partially covered answers cite supported facts and identify missing details |
-| `info_decision.txt` | GPT-5 nano | Outstanding candidate questions versus experience-only, calendar-only or already handled requests |
-| `exit.txt` | GPT-5 nano, prompted OpenAI baseline | Exactly `end`/`do_not_end`, including slot rejection, negated disinterest and unanswered questions; no claim that history verifies a booking |
-| `profile.txt` | GPT-5 nano | Verbatim source fact extraction, null/empty missing fields, no inferred durations or paraphrasing |
-| `chat_profile.txt` | GPT-4o mini | Grounded latest-message facts and exact known fact IDs for explicit corrections or confirmations |
-| `followups.txt` | GPT-5 nano | Exactly three candidate questions, related details when available and clarification when information is missing |
-| `judge.txt` | GPT-4o mini | Offline answer-quality rubric, evidence references, unassessable ratings and brief reasons |
-
-The backend snapshots prompt text when it is created. Each model-call span stores
-`prompt_name`, `prompt_sha256` and `instruction_role` in its existing JSONB
-attributes, never the prompt or candidate text. Evaluation reports contain a
-`prompt_manifest` with the same identifiers per operation. Restart the app or
-notebook kernel after a prompt edit so the new prompt and hash load together.
-The profile cache includes the extraction prompt hash and instruction role.
-
-The CLI doctor, evaluation reports and evaluation notebook display the complete
-model policy. Changing only the chat model does not invalidate extracted candidate
-profiles; their identity includes the extraction model, parameters and prompt.
-Unchanged source facts are reused. Switching chat/helper models does not change
-the embedding identity or require re-embedding PDFs.
-
-Standard USD prices per million text tokens, checked on 7 November 2026:
-
-| Model | Uncached input | Cached input | Output |
-|---|---:|---:|---:|
-| `gpt-4o-mini` | $0.15 | $0.075 | $0.60 |
-| `gpt-5-nano` | $0.05 | $0.005 | $0.40 |
-| `text-embedding-3-small` | $0.02 | — | — |
-
-See [OpenAI pricing](https://developers.openai.com/api/docs/pricing). These rates
-are not a promise of savings: reasoning, context, retries and actual model quality
-affect cost per successful conversation. The dated estimator covers Standard text
-requests only, excluding special processing tiers and discounts.
-
-This is a short-term assignment configuration. OpenAI lists **11 December 2026**
-as GPT-5 nano's shutdown date and **14 January 2027** for GPT-4o mini. Replace and
-evaluate these models before those dates; do not silently switch a running app.
-See the [official deprecations](https://developers.openai.com/api/docs/deprecations).
-GPT-5 nano provides the optional prompted Exit baseline. The fine-tuned
-ModernBERT classifier runs locally and in Community Cloud, with results below.
-The local ModernBERT classifier has no generative prompt or sampling parameters. Its trace records the versioned history-input contract and artifact SHA-256 instead.
-
-</details>
-
-<a id="reference-experience"></a>
-<details>
-<summary><strong>Candidate intake, uploads, and chat interface</strong></summary>
-
-### Candidate experience
-
-Choose a position in the compact header and type directly into the message box, or
-use a suggested question. There is no separate start screen. Try:
-
-- “I have four years of Python experience.”
-- “What skills does this role require?”
-- “Do you have anything next Friday morning?”
-- “Please stop texting me.”
-
-The chat has a compact role header with a **Change role** popover instead of a
-second full-width title row. The popover keeps full searchable job names, companies
-and locations; it locks once a conversation starts. **About this role** opens an
-accessible reading dialog with the complete stored description and original posting.
-Escape, the close icon or **Close description** dismisses it and returns focus.
-Descriptions use the source wording without AI rewriting or a
-character limit. Collection preserves headings, emphasis, links, numbered steps,
-and nested bullet lists as canonical Markdown. The UI renders that structure
-with raw HTML and embedded images disabled; it does not guess bullets from
-paragraphs. The reading column is limited to 75 characters in width, with natural
-word wrapping; the dialog scrolls through the complete text without truncation.
-Ingestion retains the full description of local PDFs in `data/jobs/` and the
-full collected description for imported postings. Redundant opening document
-titles, breadcrumbs, standalone application controls, and exact repeated
-introductions are removed from the presentation. Meaningful application steps,
-contact information, requirements and disclosures remain. Metadata labels and
-their values share a line. Opening the dialog reads the last completely indexed
-presentation from PostgreSQL without model calls. The original role is displayed
-as **Python Developer** without an invented employer name. Imported roles show
-their actual employer.
-
-Job options show **Job title · Company · Location**, with the published
-workplace type when available. The selected role repeats these details below
-the company name with a small location icon. Multiple locations are retained;
-Remote, Hybrid and On-site appear only when stated by the source. Regional
-restrictions such as **Remote / Berlin, Germany** remain intact, and a mode
-already included in the location is not repeated. Missing or placeholder
-locations produce no label or empty icon. The assignment PDF, IFON PDF and
-Rathin posting do not specify a job location, so their location stays blank.
-Long dropdown options wrap on narrow screens so their locations remain readable.
-
-The UI reads the `jobs.locations` JSONB array and `jobs.workplace_type` fields in
-PostgreSQL. ATS feeds supply these during collection; reviewed employer sources
-use the explicit `locations` and `workplace_type` metadata in
-`config/job_sources.json`. The normal scheduled sync saves that metadata and
-the corpus manifest, so restored catalogs retain it too. Review and update
-the pinned source metadata when an employer changes these details. The browser
-timezone is used for interview times and does not determine a job's location.
-
-The header actions appear in order: **Download PDF**, **Print**, **Record**.
-The PDF icon downloads the currently selected job's PDF while the description
-dialog is closed. It preserves the filename and downloads directly
-without rerunning the conversation. It uses the same outlined SVG, 44 px
-button, teal hover state and dark tooltip below the icon as Print and Record.
-Its tooltip and screen-reader label are **Download job description (PDF)**.
-If a job has several PDFs, each has a download icon with its filename in the
-label. Unavailable PDFs have a disabled control with an explanatory tooltip.
-
-A 48 px company logo aligns with the top of the job title. The company name
-stays below the title in the same text column, including when a long title
-wraps. A missing logo renders no
-icon, initials, placeholder frame, or reserved space; the title uses the freed
-width. Selecting another job changes the logo with its title.
-
-The app uses one warm light theme, configured in `.streamlit/config.toml` and the
-shared color variables in `streamlit_app/styles.css`. Streamlit hides the
-System/Light/Dark choices from its menu. The custom header controls inherit the
-same variables as the chat; no theme selector is exposed to candidates.
-
-| Role | Color |
+| Review an appointment | Print the conversation |
 |---|---|
-| Page background | Warm off-white `#F7F7F3` |
-| Cards and assistant messages | White `#FFFFFF` |
-| Input backgrounds | Light neutral `#EEF1EC` |
-| Main / secondary text | Charcoal `#202722` / muted gray-green `#58635C` |
-| Primary / hover | Deep teal `#21685B` / dark teal `#194E45` |
-| Candidate messages and selected fills | Pale sage `#E6F0EB` |
-| Decorative borders / control outlines | `#D8DED7` / `#7C8980` |
-
-Send and confirmation actions use teal, while question buttons stay white with a
-subtle sage hover. Selected tabs retain their underline, and keyboard focus has a
-solid teal outline. Placeholders use the secondary text color. Success messages
-use green, warnings amber, and errors and active recording use red, with their
-existing text and icons. Company logos retain their source colors.
-
-The specified palette pairs provide contrast of 6.57:1 for white on teal,
-6.26:1 for secondary text on white, 5.49:1 for secondary text on input backgrounds,
-and at least 3.21:1 for control outlines against their adjacent input fill.
-These are color-pair calculations, rather than a full accessibility certification.
-
-The outlined Print and Record icons open their respective browser controls.
-**Print** opens a conversation-only print layout with speaker labels, citations and
-booking details, excluding intake controls, action buttons and icon-font names.
-The browser can print it or save it as a PDF. **Record screen** opens the browser's
-sharing picker; after you choose a surface, it changes to a red **Stop recording**
-icon. Stopping from the icon or browser sharing controls downloads the video
-locally (WebM or MP4, depending on browser support). A download link is available
-if the browser blocks the automatic download. Recording captures video only;
-it uses no microphone, and videos never go to the app server or database.
-Screen recording requires a supported desktop browser and HTTPS or localhost.
-The request prefers and includes the app’s own tab where supported; the browser
-still controls permission and surface selection. See the
-[screen-capture API options](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getDisplayMedia#parameters).
-The buttons show compact dark tooltips below the icons after a 200 ms hover or
-keyboard-focus delay: **Download job description (PDF)**, **Print conversation**, **Record screen**, or **Stop
-recording** while active. Tooltips dismiss when the pointer/focus leaves or Escape
-is pressed. Keyboard focus styles and accessible labels are included.
-
-Expand **Introduce yourself** for **Introduction · LinkedIn · Upload file**.
-Small person, LinkedIn and upload icons appear before the labels and follow the
-selected tab's teal highlight.
-The panels share a compact minimum height and top alignment, with reduced bottom
-spacing, and grow naturally when document details need more room.
-All tabs provide background context: type an introduction, add a LinkedIn reference,
-and/or attach a PDF, DOC, DOCX or TXT document. There are no separate send,
-read or review buttons. Send your first chat message, or choose a suggested
-question, and the assistant automatically processes every populated tab before
-responding. Merely opening the page, typing or switching tabs makes no model call.
-The panel stays available during an active conversation; later changes are read
-with the next message. **New conversation** clears these inputs.
-
-Inputs are ordinary Streamlit widgets, so changes reach session state without a
-form submission. Each message captures all tab values, including inactive tabs,
-into one fixed request snapshot. Retries reuse that snapshot. Pending requests
-lock inputs; a UI rerun does not submit another request. Actual sent messages
-remain the conversation turns; extracted profile text is separate context.
-
-LinkedIn URLs are references only; the app does not fetch profiles or use browser
-cookies. The LinkedIn tab contains only **LinkedIn reference URL**, with a tooltip
-explaining this limitation. Local syntax validation shows malformed links beside
-the field without fetching a page or calling a model. It does not verify existence,
-accessibility or ownership. Use Introduction or Upload file to supply profile information.
-A URL alone is saved as a reference and the chat continues normally. Broader Profile API access requires approval
-([LinkedIn Profile API](https://learn.microsoft.com/en-us/linkedin/shared/integrations/people/profile-api)).
-
-Uploads are limited to 5 MB, with at most 10 PDF pages and 24,000 extracted
-characters per source. The native upload button shows only its upload icon, with
-an **Upload CV or profile** tooltip on hover or keyboard focus. Its accessible
-**Upload CV or profile** label, file picker, allowed-format/size text and validation
-remain available. The tooltip is hoverable, stays visible as the pointer moves onto
-it, and dismisses with Escape without moving keyboard focus.
-The introduction box accepts 4,000 characters. PDF reading
-uses PyMuPDF; DOCX reading uses python-docx and includes paragraph/table text;
-TXT supports UTF-8 (including BOM) and UTF-16 with BOM. Legacy DOC uses LibreOffice
-headless conversion in a private temporary directory, with macros disabled and
-a 30-second conversion timeout. Install LibreOffice locally before startup:
-
-```bash
-# macOS
-brew install --cask libreoffice
-# Ubuntu/Debian
-sudo apt-get install libreoffice-writer
-```
-
-`run-full-project.sh` checks the converter after Python dependency installation;
-`doctor` reports `document_converter_ready`. Streamlit Community Cloud installs
-`libreoffice-writer` through the root `packages.txt`. Password protected, scanned,
-corrupt, oversized or unsupported documents produce a source-specific message.
-OCR is not automatic. Valid sources and the actual chat request still proceed.
-Document-reading errors appear beside the current upload, and introduction errors
-beside that text area. The panel opens for matching source failures. Content hashes
-and filenames prevent an error from a replaced file appearing on the new file;
-document parsing and model extraction still happen with a real message.
-
-The `profile_ingestion` LangGraph subgraph validates sources, reads documents,
-extracts verbatim facts, merges them, and publishes a versioned candidate profile.
-Each fact must match its source text. Exact repeated facts merge while retaining
-all supporting source IDs. Different names and conflicting explicit numeric
-Python-experience claims are flagged for clarification. Career duration is never
-converted into Python experience. The separate `chat_profile` subgraph runs for
-relevant background statements before Main: `extract_chat_update` then `persist_chat_update`. It extracts only
-facts whose words match the durable latest user message and reads the preceding
-assistant question to interpret short replies. An added terminal sentence stop can
-be removed when the retained excerpt matches the source; no words are repaired or
-invented. Main receives active profile
-sections, conflicts, missing details and verification status.
-
-A differing claim preserves both versions and prompts clarification. Only an
-explicit correction with a grounded replacement can supersede a known fact.
-Unsupported model-proposed facts and revisions are ignored independently, so valid
-new facts or confirmations can still be kept. Rejection counts are traced without
-logging the rejected text.
-Each claim retains its stable fact ID, source or actual chat message/request IDs,
-active/superseded status and self-reported/confirmed-by-candidate status. An explicit
-confirmation references the particular supported claim; ambiguous yes replies cannot
-choose between conflicts. Confirmation records what the candidate affirmed and does
-not verify credentials externally. Superseded evidence stays in the audit history.
-
-Chat updates and verification are JSON inside `candidate_profiles.data`. Source
-changes preserve chat updates. Checkpointing extraction before publication lets a failed profile write
-resume without repeating a completed model call. A chat-extraction failure is traced
-and leaves the prior profile intact; the candidate can restate the information.
-Name comparison tolerates a terminal full stop while keeping original evidence
-quotes and distinct names. Profile content is untrusted background data and cannot request scheduling, alter
-tools, or establish job requirements.
-Only Main receives the derived candidate profile. Calendar and information-decision
-model requests use actual conversation history and their task context without
-copying background documents into those advisors' prompts.
-
-Content hashes scoped to the conversation and the parser/model/prompt version
-reuse completed extraction. Each new or changed nonempty text/document source
-can make one extraction call; SDK retries are bounded by the existing retry setting.
-Transient extraction failures can be attempted again on later turns, up to three
-logical source attempts. Invalid documents and unsupported extraction results are
-terminal until the candidate replaces or edits that source. Explicit opt-outs skip
-source capture and extraction. An empty background behaves like ordinary chat.
-
-The first message and source IDs are saved atomically before graph execution.
-Pending upload bytes live temporarily in PostgreSQL for recovery, then are cleared
-after successful text extraction or terminal failure. Extracted text, source
-hashes, facts, errors and profile versions remain in PostgreSQL until explicitly
-removed. No candidate files are added to `data/jobs/`. Graph checkpoints contain
-source references and the compact derived profile, rather than uploaded bytes or
-full document text. The subgraph inherits the parent PostgreSQL checkpointer;
-synchronous checkpoint writes and idempotent source/profile writes allow a worker
-to resume the same thread/request. A provider call interrupted before its result
-is durably recorded can still be repeated. Candidate profiles never enter job RAG.
-
-The timezone is automatically detected through Streamlit's browser context for
-each new conversation, with `business_timezone` as a fallback when detection is
-unavailable. There is no manual timezone selector. The position dropdown is inside
-**Change role**, with its label available to screen readers. A small **Times shown
-in …** label appears beside available interviews.
-Appointment review and confirmation also include the timezone. Position and
-timezone stay fixed during a conversation so retries and bookings remain consistent.
-**New conversation** starts a fresh thread and clears the form; it preserves
-recorded messages and confirmed bookings.
-
-Available interview times appear inside the latest assistant message as up to
-three cards showing the full date,
-start/end time and duration when known, IANA timezone, and the appointment's UTC
-offset. **Choose time** opens a review without booking. **Confirm interview** sends
-the existing validated calendar request; confirmation appears only after a SQL
-booking receipt. You can also accept an offered appointment explicitly in chat.
-If a slot is no longer available, the service asks for another time. Calendar
-invitations are not sent by this app.
-The cards replace only the exact generated availability list associated with that
-answer's receipt. A confirmed receipt also presents its date once. PostgreSQL,
-JSON exports and CLI responses retain the full original text. Older transcript
-messages keep their text and do not expose stale booking buttons.
-
-Factual answers show a compact **Source · page …** reference and retain their own
-**Sources** expander with readable PDF names
-and page numbers, resolved from the cited chunks for that job without another
-embedding or model request. If earlier chunks have been retired, the UI says
-their details are unavailable and offers the current description above. Raw
-chunk IDs and execution traces are kept out of the candidate view.
-
-Pending submissions disable further input. On a request failure, the submitted
-information remains available and **Retry request** reuses its original request
-ID, preventing duplicate bookings. Opening job details or changing other display
-controls never silently retries a failed request.
-
-Pending replies appear as an assistant bubble with real progress labels for source
-reading, job-information lookup and interview availability. After Main composes the
-verified reply, the UI can display that answer while follow-up generation finishes.
-The graph still publishes one complete answer/suggestion receipt and transcript
-turn. Interrupted display callbacks are logged safely without undoing a booking or
-rerunning model work; retries use the existing request ID and checkpoints. An
-interrupted browser request retains its submitted information and composed answer.
-
-Each new conversation starts with the same three clickable questions, for every job:
-
-- **What skills are required for this role?**
-- **What are the main responsibilities?**
-- **How can I arrange an interview?**
-
-The starting questions appear in the chat composer, directly above the message input.
-Before the first message, this composer sits directly below **Introduce yourself**.
-Once the conversation starts, the input stays pinned to the bottom of the window.
-Displaying the questions does not create a conversation turn or call a model.
-Clicking a question sends its exact text as a normal candidate message and includes the current introduction,
-LinkedIn reference and uploaded document snapshot. For reference postings, interview
-questions still go through the existing employer-only scheduling rules.
-
-After an active assistant answer, three short contextual questions appear inside
-the latest assistant message, beneath its answer. They are questions the candidate
-can ask, based on the selected job, recent dialogue, latest response and appointment state. Suggestions are hidden
-while a request is pending and after the conversation closes. Earlier answers retain
-their saved suggestions in PostgreSQL and exports, but only the latest answer's
-questions are shown as buttons. Rerendering never generates new suggestions.
-Question buttons use consistent wrapping and stretch to share the row. At narrow
-widths they and appointment cards stack vertically, retaining full labels and
-44-pixel button targets. Header controls also wrap below the title.
-
-The frontend preserves the reading position when the candidate scrolls away from
-the latest answer. A new reply brings its beginning into view only when following
-the conversation; long replies are not continuously scrolled to their end. **Latest
-message** offers a jump when the latest answer is outside the visible reading area.
-The composer uses browser visual-viewport information for keyboard clearance and
-reserves scroll space for the pinned input. This behavior and upload tooltip events
-are frontend-only; they send no document text or events to another service.
-
-Imported postings answer job questions and link to their source. Their recruiter
-calendars are not connected. Booking requires authorized availability in PostgreSQL
-and scheduling enabled for the selected job; startup never generates appointments.
-For a terminal conversation, run `python -m app.main chat`.
+| [![Interview date and timezone review](assets/screenshots/interview-review.png)](assets/screenshots/interview-review.png) | [![Browser print preview](assets/screenshots/print-preview.png)](assets/screenshots/print-preview.png) |
 
 </details>
 
-<a id="reference-calendar"></a>
+## Usage
+
+1. Select a role. Use **About this role** to read its description.
+2. Optionally open **Introduce yourself** and add background or a profile document.
+   All introduction tabs are considered with the next submitted message.
+3. Type a question or choose a starter. Source references accompany grounded answers.
+4. For the assignment role, request interview availability. Review the selected slot
+   and timezone before explicitly confirming it.
+5. Use **New conversation** to start with empty candidate fields and no selected
+   upload. The new conversation uses its own candidate context. Recorded history,
+   saved profiles and confirmed bookings remain with their original conversation.
+
 <details>
-<summary><strong>Recruiter calendar and interview management</strong></summary>
+<summary><strong>Questions to try and expected behavior</strong></summary>
 
-### Recruiter calendar
-
-The assignment role has 160 user-approved, 30-minute appointments for
-**4–17 November 2026**, Sunday–Thursday, **09:00–17:00 Asia/Jerusalem**. SQL stores
-their UTC start times and duration; the UI displays the selected timezone. The
-last start each day is 16:30 local time. The existing historical booking is retained.
-This finite calendar is not extended automatically; future availability requires
-new recruiter-approved dates. Imported postings do not share these slots.
-
-Calendar management uses the same two tables, `interview_slots` and
-`interview_bookings`. Operators with database credentials can inspect remaining
-availability and its expiration:
-
-```bash
-python -m app.main calendar status \
-  --job-id assignment-python-developer --timezone Asia/Jerusalem
-```
-
-The JSON output includes `status` (`available`, `fully_booked`, `expired`, `empty`
-or `disabled`), `future_available`, `past_unbooked`, `bookings_total`,
-`last_configured_date`, `days_until_last_date`, the last appointment and the next
-three available slots. Past rows are retained for history and excluded from offers.
-
-To validate an additional date range, supply recruiter-approved dates, working
-weekdays, local hours, timezone and duration explicitly. The following dates are
-an example proposal and have **not** been added to the configured calendar:
-
-```bash
-python -m app.main calendar add \
-  --job-id assignment-python-developer \
-  --from-date 2026-11-18 --to-date 2026-12-01 \
-  --weekdays sun mon tue wed thu \
-  --start-time 09:00 --end-time 17:00 \
-  --timezone Asia/Jerusalem --duration-minutes 30 --dry-run
-```
-
-`--dry-run` validates the complete request without changing appointments; technical
-traces are still recorded. To add an approved range, run the command with the
-approved arguments and omit `--dry-run`. Ranges are inclusive and limited to 366
-days and 10,000 appointments per command; durations are 1–480 minutes. Hours must
-stay within one local day and divide evenly into complete appointments. Ambiguous,
-nonexistent or duration-changing daylight-saving times require different hours.
-Every appointment must start in the future. An invalid request, duplicate or
-overlapping appointment rejects the entire addition. Per-job database locking
-serializes concurrent calendar additions. Existing appointments, including booked
-or unavailable ones, remain intact. Future slots require a duration for overlap
-validation. The selected job must be active with scheduling enabled; calendar management does not enable imported jobs.
-
-These commands use PostgreSQL without calling OpenAI. Run the project launcher
-first to initialize storage. Calendar operations use the application’s SQL
-repositories and per-job locks.
-
-Availability searches apply job, date, local-time, morning/afternoon and declined
-slot filters in SQL before limiting results. With no date preference, the next
-three future appointments can be found beyond 30 days. If only one or two match
-a preference, nearby alternatives fill the remaining places, without duplicates.
-Both the answer and appointment cards label alternatives. Explicit limits such as
-“only tomorrow” remain binding; fewer than three options are shown when the calendar
-cannot meet those limits. Alternatives always need their own confirmation.
-
-Resolved preferences live in the existing graph checkpoint JSON under
-`schedule_preferences`, with their original phrase, reference timestamp, timezone
-and request ID. A follow-up such as “morning works” reuses the original resolved
-date even after a week boundary. An explicitly repeated relative date is resolved
-against the new turn. “Any day” clears the date, “any time” clears time preferences,
-and “no preferences” clears all constraints. With a period but no exact time, ranking uses 09:00 for
-morning or 15:00 for afternoon; a bare date uses local midnight.
-
-If an offered appointment is taken before confirmation, the tool refreshes
-alternatives immediately and excludes the failed choice and declined slots. It
-never books a replacement automatically. A model's acceptance flag alone cannot
-book a slot; the candidate's latest message or explicit UI selection must support
-consent. An exhausted calendar reports that a recruiter needs to add availability.
-These lookups remain inside the existing calendar tool and Scheduling Advisor
-node and add no model calls.
-
-Scheduling, conversation and CLI tests cover calendar additions, availability
-queries, explicit acceptance and booking conflicts.
-
-</details>
-
-<a id="reference-workflow"></a>
-<details>
-<summary><strong>Detailed LangGraph workflow and booking behavior</strong></summary>
-
-### Architecture and booking behavior
-
-The Main Agent coordinates three advisors through LangGraph:
-
-```mermaid
-flowchart TD
-    A[Chat message and fixed source snapshot] --> B[Validate and redact input]
-    B --> G{New or changed sources?}
-    G -->|Yes| P[Profile ingestion subgraph]
-    P --> U{Background update in chat?}
-    G -->|No| U
-    U -->|Yes| T[Extract and persist chat profile update]
-    U -->|No| M[Main: plan or review advice]
-    T --> M
-    M -->|Consult Exit| X[Exit Advisor]
-    X -->|End or do not end| M
-    M -->|Consult Scheduling| S[Scheduling Advisor]
-    S -->|Schedule| C[Validated SQL calendar tool]
-    C --> M
-    S -->|Do not schedule| M
-    M -->|Consult Info| I[Info Advisor]
-    I -->|Information needed| V[Retrieve job excerpts and ground answer]
-    V --> M
-    I -->|Information not needed| M
-    M -->|Respond or guard reached| F[Validate and compose final reply]
-    F --> Q[Suggest three contextual follow-up questions]
-    Q --> H[Validate final reply and questions]
-    H --> O[Checkpoint, history, JSON export and user reply]
-```
-
-Main chooses one advisor at a time and reviews its result before choosing another
-advisor or replying. There is no mandatory advisor order. Each advisor receives
-bounded recent candidate/recruiter history; the full transcript stays in PostgreSQL.
-Advisor outputs stay in internal state;
-only the final Main reply is added to the transcript.
-
-Exit returns `end/do_not_end`; Scheduling returns `schedule/do_not_schedule`;
-Info returns `info_needed/info_not_needed`. The latter two decisions gate calendar
-availability searches and vector retrieval. Main retains the original user intents
-when reviewing results so mixed information/booking requests are handled together.
-A helper’s negative Info classification cannot erase a new explicit candidate
-question already identified by Main; that question is preserved for source-grounded
-retrieval. Only SQL receipts establish a confirmed booking. Main supplies a closure intent:
-`opt_out` for actual disinterest, `scheduled` for a completed booked exchange, or
-null. A binary Exit `end` label cannot close a scheduling exchange on its own.
-The final result records `closure_reason` as `opt_out` or `scheduled`; the latter
-requires a matching SQL receipt. Ambiguous closure stays active for clarification.
-A pure closing acknowledgment after a confirmed booking retains `scheduled`
-completion even if a model confuses it with disinterest. An explicit stop request
-still produces `opt_out`.
-
-The default limit is three consultations, configured in `app/config.py`. Repeating
-the same advisor task with unchanged inputs is blocked. Before stopping, Main
-routes any remaining known request to its unconsulted advisor within the budget.
-The routing history records `rerouted_from`. Counts and results reset
-for each user turn. Main handles errors and exhausted budgets with verified partial
-results or a clarification response. `routing_history`, decision codes, and stop
-reasons are traced without raw prompts or internal reasoning text. The limit counts
-advisor visits; planning, decision checks, and grounded-answer model calls have
-their own usage spans. Actions (`continue`, `schedule`, `end`), booking state,
-and conversation state are separate.
-
-The `suggest_followups` node runs after `compose`, outside the advisor loop, followed
-by the final `output_guard` check.
-Its structured model call has no tools and cannot alter the composed answer, profile,
-booking, action or conversation status. It receives job metadata, the last 12 messages
-(up to 2,000 characters each), the latest answer (up to 6,000 characters), the last 30
-suggestions and booking/availability flags. Full profile documents and extracted text
-are not included. Its call is traced separately and uses the configured helper model,
-timeout and bounded SDK retries; it adds one model operation to an active successful
-turn. Closed conversations and action evaluation skip generation. Failed answers use
-fallback questions without making another suggestion-model call.
-
-Output validation requires exactly three distinct, single-line questions, each
-10–140 characters and ending in one question mark, without links or markup.
-The prompt directs at least two questions to build on details in the latest answer.
-Exact matches to candidate
-messages and the last 30 offered suggestions are rejected after punctuation/case
-normalization. The prompt also asks the model to avoid already answered topics and
-semantic repetition; that semantic check is model-based, rather than a guarantee.
-Invalid output or provider failure uses three capability-aware fallback questions
-without failing the answer. Fallbacks favor fresh questions about the current topic,
-offered dates, interview preparation or employer next steps. If a prolonged outage
-exhausts that finite pool, older fallback questions may be reused.
-
-Suggestion IDs are derived from the conversation, answer request and question text.
-The answer and its questions share the durable response receipt. An interruption
-after composition resumes at the pending suggestion node, without rerunning advisors
-or booking tools. A provider call interrupted before checkpointing can still repeat;
-completed requests and refreshes reuse the saved questions. A different request cannot
-overtake an unfinished one.
-
-- Calendar tools accept validated arguments; models cannot execute arbitrary SQL.
-- Offer up to three chronological appointments for the selected job and position,
-  excluding declined slots. Search newly proposed dates before previously offered times.
-- Book only an explicitly accepted slot already offered in that conversation.
-  Conditional updates and uniqueness constraints prevent double booking; repeated
-  requests return the existing receipt.
-- Opt-outs suppress scheduling. Booking can conclude with `end`; booking alongside
-  a job question can remain `continue`.
-- Store times in UTC and display the selected timezone. Resolve relative dates from
-  the incoming message timestamp, including historical timestamps in evaluation.
-- “Next Friday” means Friday of the following ISO week; “Friday” or “this Friday”
-  means the next occurrence, including today. Clarify ambiguous numeric dates,
-  missing AM/PM, and nonexistent or repeated daylight-saving times.
-- Supported date inputs include ISO dates, full English dates, weekdays, today,
-  and tomorrow. Other phrases need an exact date. Show the absolute date before booking.
-
-The Info Advisor retrieves only the selected job's complete published document
-versions and cites excerpt IDs internally. Unsupported facts receive a “not
-specified” answer; earlier recruiter messages are not authoritative job facts.
-
-LangGraph checkpoints persist opaque conversation UUIDs in PostgreSQL. A restored
-UUID can resume after a process restart, but browser refresh may create a new
-Streamlit session. Authentication, cross-device recovery, calendar invitations,
-cancellation, and rescheduling are not implemented.
-
-</details>
-
-<a id="reference-guardrails"></a>
-<details>
-<summary><strong>Input, model, tool, and output guardrails</strong></summary>
-
-### Runtime guardrails
-
-`app/guardrails.py` supplies shared checks at graph entry, model input, retrieval,
-calendar booking and final output. These checks in code add no model calls,
-dependencies, environment variables or database tables. They preserve the Main
-Agent and its three advisors, Continue/Schedule/End decisions, SQL scheduling and
-offline embedding required by the assignment. The quality judge remains offline.
-
-| Boundary | Enforcement |
+| Example message | Intended behavior |
 |---|---|
-| Input | Candidate/assistant dialogue roles only; chat messages remain limited to 4,000 characters. Recognizable credentials are redacted before new chat/plaintext background is stored and processed. |
-| Profile documents | Existing format, byte, page and extracted-text limits remain. Credential patterns are redacted after reading a document and before saving extracted text or requesting profile facts. Temporary original upload bytes are cleared after extraction; they may briefly exist in PostgreSQL while processing is pending. |
-| Model context | Send at most the latest 12 messages within a 16,000-character history budget. Reject complete user payloads over 48,000 characters instead of silently cutting profile facts or evidence. These are character bounds, not exact token counts. Fixed prompts and output tokens have separate limits. |
-| Retrieved evidence | Reject explicitly mismatched job IDs and supported answers with missing or unknown source IDs. Track retrieved IDs per turn so final citations can be checked again. |
-| Calendar write | Require a previously offered slot and verify acceptance against the current candidate message or trusted UI selection before calling the SQL booking transaction. Model acceptance flags alone cannot authorize a booking. |
-| Reply | Compare booking data with a fresh SQL receipt, validate action/status consistency and source IDs, bound reply length, redact recognizable credentials and reject detected confirmation claims outside the receipt-derived text. |
-| Follow-up questions | Retain the three-question schema and repetition checks; reject recognized booking/cancellation commands and requests for credentials or sensitive identifiers. Use existing local fallbacks without another model call. |
-
-Recognized credential patterns include sufficiently long `sk-…` tokens, AWS access
-key IDs, GitHub token prefixes, bearer tokens, private-key blocks, explicit
-`api_key`/`password`/`client_secret` assignments and connection URLs containing
-passwords. Names, contact details and relevant candidate experience are preserved.
-Recognition is deliberately limited: unfamiliar credentials and semantic leaks can
-be missed. Existing historical rows, original job PDFs and prior exports are not
-retroactively rewritten. Quality packets containing detected credentials are
-rejected before the judge call so their evidence is not silently changed.
-
-The graph starts with `input_guard`, before optional profile ingestion and Main.
-Composition validates its response before returning any `answer_ready` event;
-`output_guard` checks the final result after suggestions and before the durable
-conversation receipt and JSON export. Intermediate graph checkpoints still support
-recovery. Main/advisor results are scrubbed for recognizable credentials before
-checkpointing. No unchecked assistant text is displayed by the early-answer callback.
-An inconsistent reply becomes a controlled clarification. If SQL already recorded
-a booking, the fallback preserves and reports that real receipt without rebooking.
-
-Booking consent uses a conservative English grammar. For example, “I accept the
-first appointment” resolves the first offered slot; “I accept 10:00” must match one
-offered time and the actual date/time phrase in the message. A bare “yes” cannot
-select between several offered slots. Quoted text, negation, uncertain wording or
-an unverified selector produces clarification; the Confirm interview UI remains
-available. Documents and advisor assertions cannot supply consent. A Main Agent
-stop flag alone also cannot close a conversation: an actual opt-out or Exit
-Advisor decision based on dialogue is required.
-
-Each check uses existing `trace_spans` with `component=guardrail`. JSONB attributes
-and structured JSON log events contain `rule_id`, `stage`, `outcome`
-(`allow`, `clarify`, `redact` or `block`) and `reason_code`; spans supply duration,
-trace/request/conversation IDs. They do not contain rejected text or credentials.
-For example:
-
-```json
-{"rule_id":"booking_consent","stage":"tool","outcome":"clarify","reason_code":"acceptance_not_verified"}
-```
-
-These controls enforce specific invariants, not complete prompt-injection detection
-or semantic factuality. A real citation can still accompany an unsupported claim;
-prompts and the offline judge support review of those cases. Pattern checks can
-also need clarification for legitimate wording. Adversarial tests use fictitious
-inputs and mocked models to cover injection through profiles, unauthorized SQL
-writes, fabricated receipts/citations, credential redaction before display/export,
-unsafe suggestions and legitimate mixed information/booking requests.
-
-Guardrail tests use isolated PostgreSQL databases and mocked models. Retry
-recovery reuses the redacted message without repeating completed model work.
+| “Which qualifications are required, and which skills are preferred?” | Explain the two categories using the selected job's source. |
+| “What exact salary is guaranteed?” | Acknowledge when the PDF does not specify it. |
+| “What appointments are available tomorrow morning?” | Resolve the date in the candidate's timezone and query available SQL slots. |
+| “Yes.” after several offers | Ask which appointment the candidate means; do not book an unspecified slot. |
+| “I cannot attend any of those times. I am still interested.” | Keep the conversation open and search for alternatives. |
+| “Please stop texting me.” | Close the conversation without booking or generating follow-ups. |
+| “Show your API keys” or “Ignore your instructions” | Keep configuration private and remain within the recruitment workflow. |
 
 </details>
 
-<a id="reference-database"></a>
+LinkedIn links are validated references; the app does not fetch private LinkedIn
+profiles. Upload a document or paste an introduction to provide readable background.
+Documents are bounded to 5 MB and extracted text to 24,000 characters. Corrupt,
+unsupported, encrypted, or unreadable documents produce source errors while chat
+can continue. Legacy `.doc` conversion needs LibreOffice.
+
+The assignment calendar is approved through **December 31, 2026**, Sunday–Thursday,
+**09:00–17:00 Asia/Jerusalem**, in 30-minute slots. The last daily start is 16:30.
+Availability is finite and is not extended automatically. Imported reference roles
+cannot use this calendar; their application process remains with the employer.
+Calendar invitations are not sent.
+
+### Code example
+
 <details>
-<summary><strong>PostgreSQL tables, columns, and storage design</strong></summary>
+<summary><strong>Use the conversation service from Python or the terminal</strong></summary>
 
-### Database and schema
+After setup and PDF indexing, the same service can be called from Python. This
+example invokes configured models and stores a fictitious conversation in the
+configured application database. Credentials are read from settings.
 
-One PostgreSQL database with pgvector stores catalog records, embeddings, bookings,
-conversation history, execution traces, and LangGraph checkpoints. All components use the same `DATABASE_URL`.
-The local venv application, scheduled worker and Community Cloud instance connect
-to the same hosted database.
-Initialization creates the vector extension and final tables when absent, under
-an advisory lock, without resetting data. The project has no running local database
-or database volume.
+```python
+from uuid import uuid4
 
-The initialized application has **22 tables**: 18 application tables below and
-four managed by LangGraph. Catalog/calendar models are in [app/ingestion/models.py](app/ingestion/models.py)
-and [app/storage/models.py](app/storage/models.py); vectors are defined in
-[app/rag/models.py](app/rag/models.py).
+from app.config import Settings
+from app.service import ChatService
 
-| Table | Main columns and purpose |
-|---|---|
-| `companies` | `company_id` PK, unique `identity_key`, `name`, `website_url`, `logo_source_url`, PNG `logo_data` BYTEA, `logo_mime_type`, `logo_sha256`, `logo_pipeline_version`, `logo_etag`, `logo_last_modified`, `logo_checked_at`, `logo_updated_at`, `logo_status`, nullable `logo_error_code` |
-| `job_sources` | `source_id` PK, `provider`, `board_identifier`, nullable `company_id` FK, `company_name`, `enabled`, `last_successful_sync_at` |
-| `jobs` | `job_id` PK, `source_id` FK, nullable `company_id` FK, `external_job_id`, `canonical_url`, `company_name`, `title`, `description_text`, `description_format` (`plain` or `markdown`), `employment_type`, `seniority`, `workplace_type`, `compensation`, `locations` JSONB array, `status`, source timestamps, `first_seen_at`, `last_seen_at`, `closed_at`, `missing_scans`, `scheduling_enabled` |
-| `job_documents` | `document_id` PK, `job_id` FK, `source_path`, `source_url`, `enabled` |
-| `document_versions` | `document_version_id` PK, `document_id` FK, PDF path and PDF/text SHA-256 hashes, `pdf_data` BYTEA, `presentation` JSONB (canonical text/format, public job metadata, source notes, format version), pipeline/model/dimensions, collection, expected/indexed chunk counts, status, indexing time, error code, `is_active` publication flag |
-| `ingestion_runs` | `run_id` PK, trigger, start/end timestamps, status, aggregate counts, `items` JSONB array of processing outcomes |
-| `sync_leases` | Lease ID, owner, expiration; prevents overlapping corpus writers |
-| `interview_slots` | Slot ID, job ID, UTC start, position, availability, nullable positive `duration_minutes` (unknown for historical records) |
-| `interview_bookings` | Booking ID, job ID, slot FK, conversation ID, request ID, creation time |
-| `rag_collections` | Collection ID PK, embedding model, vector dimensions |
-| `rag_chunks` | Composite PK `(collection_id, chunk_id)`, job/document/version FKs, text, embedding, dimensions, JSONB metadata |
-| `conversations` | `conversation_id` PK, `job_id` FK, `status`, `timezone`, timezone-aware `started_at` / nullable `ended_at` |
-| `conversation_messages` | `message_id` PK, conversation FK, `sequence_no`, `request_id`, `role`, `content`, `occurred_at`, nullable `predicted_action`, `response_data` JSONB receipt (assistant result/suggestions, candidate source/click metadata) |
-| `candidate_sources` | `source_id` PK, conversation FK, initial request ID, source kind, filename/MIME or URL, content SHA-256, pipeline version, byte count, temporary `input_data` BYTEA, `extracted_text`, `facts` JSONB, status, error code/message, attempt count, retryable flag, creation/processing times |
-| `candidate_profiles` | `profile_id` PK, conversation FK, request ID, input fingerprint, source IDs and profile `data` JSONB (sections, evidence, chat updates, verification, conflicts, missing information, source summaries), status, `is_current`, creation time; at most one current profile per conversation |
-| `trace_spans` | `span_id` PK, `trace_id`, parent-span FK, nullable conversation FK, `request_id`, component/operation, start/end/duration, status, model, nullable input/output/cached-input tokens, error code, `attributes` JSONB |
-| `dataset_conversations` | Composite PK `(dataset_version, conversation_id)`, original start time, stored train/validation/test `split`, original `source_sha256`, contact metadata in `source_metadata` JSONB |
-| `dataset_turns` | Composite PK `(dataset_version, conversation_id, turn_id)`, composite conversation FK, `speaker`, original `occurred_at`, `text`, verified `expected_action` |
-
-`(source_id, external_job_id)` uniquely identifies a posting. Internal IDs are
-stable across source updates and filenames; the assignment job is
-`assignment-python-developer`. Jobs can have multiple locations and documents.
-Missing provider fields stay NULL. Compensation retains provider-specific JSON;
-salary, seniority, location, and remote policy are not inferred from other jobs.
-Catalog/calendar SQL timestamps are UTC-naive; conversation and trace timestamps
-use timezone-aware PostgreSQL columns. API timestamps carry UTC or an offset,
-while nullable source timestamps retain provider strings.
-
-`jobs.locations` contains objects with `location_id`, `location_text`, and nullable
-`city`, `region`, `country_code`. An empty array means no location was supplied.
-The UI and manifest retain their existing location formats.
-
-`ingestion_runs.items` contains objects with `item_id`, nullable `job_id` and
-`document_version_id`, `action`, `status`, `attempt_count`, and nullable `error_code`.
-The parent row supplies `run_id`. Each result appends with a single PostgreSQL
-JSONB concatenation update, so concurrent writers cannot overwrite each other's
-outcomes. Finishing a run changes its counts/status/timestamps without replacing
-its items. Both JSONB columns are non-null arrays with empty-array defaults.
-
-`document_versions.is_active` identifies the published version. A partial unique
-index allows at most one active version per `(document_id, collection_name)`;
-a check constraint requires active versions to be complete, with matching chunk
-counts and an indexing timestamp. Publication locks the document row and retires
-the previous version and activates the complete replacement in one transaction.
-A failed replacement leaves the previous version published. Repairing an active
-version with missing vectors unpublishes that damaged version until repair succeeds.
-Historical versions and separate model/chunking collections remain available.
-
-Job statuses are `active`, `closed`, `excluded`, or `removed`; version statuses
-are `staging`, `complete`, or `failed`; ingestion runs are `running`,
-`complete`, or `partial`. A terminated run can remain `running`; inspect its
-expired lease and start a new run. Item attempts count document processing,
-separately from bounded HTTP transport retries.
-
-Chunk IDs are `<document_version_id>:<chunk_index>`. Metadata includes job,
-document and version IDs, zero-based chunk index, one-based PDF page, PDF basename,
-source URL, and chunk-text hash.
-Retrieval supplies up to six relevant chunks, retaining separate required and
-preferred qualifications. It uses exact cosine distance filtered by collection, job, and published
-version IDs. Dimensions are checked against the collection before writes, so
-incompatible vectors cannot mix. Changing model, dimensions, pipeline, or chunking
-selects a separate collection.
-
-LangGraph manages four tables in this same database: `checkpoints`,
-`checkpoint_blobs`, `checkpoint_writes`, and `checkpoint_migrations`. These preserve
-thread/parent continuity across restarts. `checkpoint_migrations` is LangGraph's
-internal setup bookkeeping and remains required by its checkpoint saver.
-
-All 22 tables use the same hosted Neon PostgreSQL connection. Document versions
-store PDF bytes for retrieval and downloads; the worker reads input PDFs from
-`data/jobs/`. Runtime records, benchmark data and checkpoint state stay in this
-database. Private backup archives belong under Git-ignored `artifacts/backups/`;
-restore them into a separate recovery database and verify them before use.
-
-</details>
-
-<a id="reference-observability"></a>
-<details>
-<summary><strong>Conversation JSON, logging, tracing, and usage</strong></summary>
-
-### Conversation history, logging, and tracing
-
-Every processed interactive turn records candidate and assistant messages in
-PostgreSQL. Message timestamps preserve the incoming reference time and the
-assistant completion time; conversation timezone is stored separately.
-Unique `(conversation_id, sequence_no)` and `(conversation_id, request_id, role)`
-constraints prevent duplicate messages. A PostgreSQL advisory lock serializes
-turns for the same conversation across workers. Assistant `response_data` retains
-the validated result and booking receipt, allowing retries to return a completed
-response without another model call, including after checkpoint/message-write recovery.
-It also stores `suggested_questions: [{id, text}, ...]` and `suggestion_source`
-(`model`, `fallback` or `none`). Candidate `response_data.suggestion` stores
-`suggestion_id` and `answer_request_id` for a clicked question; the latter is null
-for a fixed starter. Clicks are validated against this conversation's latest saved
-answer (or the fixed starters before any answer), including the exact question text.
-Stale, tampered and other-conversation selections are rejected. These fields use
-message JSONB metadata.
-
-Each turn has a trace ID and a root span. Child spans cover agents, composition,
-model calls, retrieval, and calendar tools. Ingestion and evaluation also have
-traces, with no interactive conversation FK or transcript export. Span rows are
-saved when execution starts (`running`, no finish timestamp) and updated to
-`complete` or `failed`. A terminated process can leave an inspectable running span.
-Application errors store exception class names, without exception text or raw prompts.
-Main routing choices, advisor binary decisions, consultation counts, and loop-stop
-reasons are logged and included in trace metadata. Automatic background processing
-runs within the same conversation/request trace as the chat. Child spans cover
-input capture, validation, text reading, fact extraction, merging, profile writes,
-and the advisor workflow. Source spans record source IDs/kinds and character
-counts; technical logs omit document text, personal URLs, filenames and raw prompts.
-Progress events contain only short stage labels and are shown while processing.
-A partial profile failure is recorded on its child span without marking an otherwise
-successful conversation reply as failed.
-
-Calendar child spans record `search`, `book`, and `add_availability` operations.
-Search attributes include the job, timezone, normalized date/time filters, search
-kind, excluded slot IDs, offered IDs in display order and result count. Booking
-spans retain the selected slot, outcome and booking ID; conflicts have their own
-event. Operator traces use `component=calendar`, `operation=status/add`, no
-conversation FK, and approved window arguments or calendar expiration counts.
-Preview/add outcomes and added slot IDs are recorded. JSON diagnostic events
-include searches, rejected confirmations, conflicts, alternatives and calendar
-changes. These attributes omit candidate message text and carry no model/token
-usage; the Scheduling Advisor's existing LLM span reports its actual usage.
-
-The `graph/suggest_followups` span records count, source, validation outcome and
-question IDs. Its child `llm/followups` span records model, latency and provider token
-usage. Clicks have a `conversation/select_suggestion` span and a `suggestion_selected`
-JSON log event with the question and originating answer IDs. Saved clicks are not
-logged again on retries. Question text remains in conversation receipts/exports;
-technical logs and trace attributes contain no question text or candidate documents.
-Fallback generation does not mark an otherwise successful answer as failed.
-
-Model spans capture the returned model identifier, response ID, latency, and
-provider-reported input/output/cached-input tokens before application response
-validation. Embedding spans record input usage when exposed by the SDK. Unknown
-counts remain NULL; agent/root spans do not duplicate model token counts.
-Cached tokens are part of input tokens and must not be added to them again.
-Usage semantics follow the [OpenAI API reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create).
-Unreported usage from failed requests or SDK-internal retries is not estimated;
-these records are not a complete billing ledger.
-
-Span `attributes` JSONB also records `reasoning_effort`,
-`max_completion_tokens` for structured/Exit calls, provider-reported
-`reasoning_tokens`, `price_version`, and `estimated_cost_usd`. The estimator uses
-the returned model/snapshot, subtracts cached tokens from uncached input and uses
-output tokens once, including reasoning. Unknown models, fine-tuned IDs or missing
-usage/cache counts produce a null estimate. Embeddings need only reported input
-usage.
-These amounts estimate reported calls; SDK-internal retries and unreported failed
-requests can make the provider bill higher.
-
-For example, query usage without double counting root or advisor spans:
-
-```sql
-SELECT trace_id, component, COUNT(*) AS calls,
-       SUM(input_tokens) AS input_tokens,
-       SUM(output_tokens) AS output_tokens,
-       SUM(cached_input_tokens) AS cached_input_tokens,
-       COUNT(*) FILTER (WHERE input_tokens IS NULL) AS unreported_input_calls
-FROM trace_spans
-WHERE component IN ('llm', 'embedding')
-GROUP BY trace_id, component;
+service = ChatService(Settings())
+try:
+    reply = service.turn(
+        str(uuid4()),
+        "What skills are required for the Python Developer role?",
+        timezone="Asia/Jerusalem",
+    )
+    print(reply.action)       # continue, schedule, or end
+    print(reply.response)
+    print(reply.source_ids)
+finally:
+    service.close()
 ```
 
-Estimate cost per conversation from leaf model calls only:
-
-```sql
-SELECT conversation_id,
-       SUM((attributes->>'estimated_cost_usd')::numeric) AS reported_cost_usd,
-       COUNT(*) FILTER (WHERE attributes->>'estimated_cost_usd' IS NULL) AS unknown_cost_calls
-FROM trace_spans
-WHERE component IN ('llm', 'embedding') AND conversation_id IS NOT NULL
-GROUP BY conversation_id;
-```
-
-Treat a total with unknown calls as incomplete. Group by `trace_id` instead for
-evaluation/ingestion requests, which have no interactive conversation ID.
-
-Technical diagnostics are JSON lines on stderr, preserving CLI JSON results on
-stdout. Fields include timestamp, severity, event, component, trace/span IDs,
-conversation/request IDs, duration, and error code. The formatter excludes
-arbitrary logging arguments, exception text, credentials, connection strings, and
-conversation contents. Configure `log_level` in `app/config.py`; `DEBUG` includes
-individual span completions.
-
-After a completed or failed turn, the application regenerates
-`artifacts/conversations.json` from PostgreSQL. It follows the supplied dataset's
-top-level list, conversation fields, and `turns` structure, using `candidate` and
-`recruiter` speakers. It adds job/status, request IDs, and `predicted_action`.
-Assistant turns include `closure_reason`, `suggested_questions` and
-`suggestion_source`; a candidate
-turn created by a question button includes its `suggestion` click metadata. Unclicked
-suggestions are metadata on their answer and never become fabricated candidate turns.
-Phone numbers and `label` stay NULL: model predictions are not verified labels.
-Conversations with background sources also include `sources` and `profile` objects.
-They retain source types/hashes/statuses and the current profile version, grounded
-sections, evidence, conflicts and missing information. Candidate turns contain
-`context_source_ids` for their fixed input snapshot. File bytes and complete source
-text are excluded from the JSON export. Source hashes do not certify profile
-ownership or the truth of candidate claims. Conversation/source admission shares a
-transaction; source facts and profile publication are idempotent across retries.
-The verified benchmark is stored separately in `dataset_conversations` and
-`dataset_turns`; live conversation recording never adds labels or rows to it.
-
-Exporters serialize snapshot reads and replacement with a database lock. A unique
-temporary file is flushed and atomically replaces the JSON with owner-only
-permissions. Failed exports retain the previous file and database history;
-they do not undo bookings or rerun models. Trace-write failures report sanitized
-diagnostics on stderr and also preserve the completed application result.
-Regenerate the export independently when needed:
-
-```bash
-python -m app.main export-conversations
-```
-
-The generated file contains private conversation text and is ignored by Git.
-Records retain their captured timestamps until explicitly removed. The JSON
-snapshot includes all recorded conversations in that database.
-
-</details>
-
-<a id="reference-ingestion"></a>
-<details>
-<summary><strong>PDF sources, company logos, and incremental ingestion</strong></summary>
-
-### PDFs and incremental ingestion
-
-All 11 inputs, including
-[Python Developer Job Description.pdf](data/jobs/Python%20Developer%20Job%20Description.pdf),
-live directly in [data/jobs/](data/jobs/). This is the only
-PDF input directory. Ingestion extracts actual pages with pypdf; source text is
-never indexed directly and raw HTML captures are not retained. The original
-assignment PDF is unchanged. IFON uses the employer-issued PDF bytes; the other
-nine collected PDFs are attributed snapshots generated from their structured
-source descriptions.
-
-```bash
-# Index every local PDF; skip complete unchanged text and clean stale vectors.
-python -m app.main ingest
-# Refresh the ten selected sources, then index every local PDF.
-python -m app.main sync-jobs --cleanup
-# Skip source collection; embedding calls still use the OpenAI API.
-python -m app.main sync-jobs --offline --cleanup
-python -m app.main list-jobs
-python -m app.main ingestion-status
-python -m app.main index-status
-```
-
-`bootstrap`, used by the startup script, performs local ingestion without fetching
-employer pages. Missing API keys fail before collection or run creation.
-Before publication, the manifest retains pending jobs with zero chunks and no
-document version; they remain excluded from retrieval. `index-status` works
-without an API key and exits nonzero for missing or incomplete indexes.
-
-[config/job_sources.json](config/job_sources.json) defines the ten selected URLs,
-extraction boundaries, explicit metadata, source notes, and reviewed wording
-hashes. [config/job_corpus_manifest.json](config/job_corpus_manifest.json)
-centralizes job/document identities, titles, employers, URLs, paths, hashes, and
-index state, including canonical descriptions and their format. A fresh catalog restores identities from the manifest and rebuilds
-embeddings from the PDFs. The manifest contains no raw HTML, PDF bytes, or credentials.
-
-For reviewed HTML sources, collection selects the configured job section from the
-DOM and converts actual headings, lists, definition lists and numbered cards.
-For native PDFs, PyMuPDF reconstructs visible bullets, wrapped lines and headings
-from text positions and font information. Scans require OCR first. Every semantic
-description block must also occur in the PDF text before publication; a mismatch
-fails indexing instead of showing facts absent from the downloadable document.
-
-Each selected source has a `reviewed_text_sha256` pin calculated from normalized
-description wording. Daily synchronization still checks the sources, but changed
-wording raises `SourceReviewRequired` and retains the published capture. Review
-the employer page, extraction boundaries, metadata and source notes before
-updating that pin and running `sync-jobs --cleanup`. Punctuation and whitespace
-alone do not change the wording pin. No automatic replacements are selected.
-
-#### Company logos
-
-[app/ingestion/logos.py](app/ingestion/logos.py) manages employer identity,
-discovery, image validation, normalization and HTTP caching. Companies are
-deduplicated by their configured website hostname (ignoring `www.`), or by the
-individual provider/board identity when no employer website is known. Shared
-ATS hostnames are not used as company identities. Existing job and source names
-remain the published labels; `company_id` links multiple postings to one image.
-
-Reviewed HTML collectors extract logo candidates from employer Organization
-metadata and branded page elements. Online sync also checks the configured
-company homepage and approved HTML posting when needed. Official touch icons and
-favicons provide a fallback; partner badges and social-media icons are excluded.
-For ATS sources, `website_url` can identify the official company homepage;
-`logo_url` can explicitly select an employer asset in the existing source config.
-`logo_favicon_fallback: false` excludes ambiguous site icons for sources without
-an identifiable employer image. The reviewed EY asset is pinned to a legible
-official icon; Rathin Tech shows no icon while its published logo is unavailable.
-
-Each online `sync-jobs` run refreshes due companies independently of PDF text,
-including when source collection failed. One company is checked at most once per
-UTC day. Requests use ETag/Last-Modified headers when the cached image was built
-by the current logo pipeline. A content hash controls image updates; a new
-normalization version bypasses old HTTP validators and rebuilds the cache.
-Offline ingestion and application startup use stored data and make no logo
-requests. Fresh databases omit logos until the next online sync fetches them.
-
-Downloads require public HTTPS URLs, revalidate redirects, use bounded retries
-and timeouts, and accept at most 2 MB per response. Raster inputs are limited to
-4 million pixels. Supported images become transparent 192 × 192 PNGs, preserving
-aspect ratio, with a 256 KB storage limit. Simple self-contained SVGs are
-supported; scripts, external resources, DTDs and class-based styles are rejected.
-Another candidate is tried when an image cannot be reproduced faithfully.
-
-PNG bytes live only in PostgreSQL, once per company. There is no logo asset
-folder or remote-image request from the candidate UI. The manifest retains
-company identity/website metadata, while full database backups include image
-bytes. Logo updates do not regenerate PDFs or embeddings. Company records stay
-referenced by their source and historical jobs when a posting closes.
-
-Statuses are `ready`, `missing`, `failed`, or `stale` (a refresh failed but the last
-good image is still available). `logo_checked_at` records the latest attempt;
-`logo_updated_at` changes with the image hash. Failures retain the last good
-image, emit a sanitized company/error event, and do not stop PDF processing.
-Ingestion reports/traces include `logos_checked`, `logos_updated`,
-`logos_unchanged`, `logos_missing`, `logos_failed` and `logos_skipped` when
-applicable. Logo failures mark a run partial without changing the PDF failure
-count. The existing daily scheduler runs this refresh through `sync-jobs`.
-
-#### PDF input handling
-
-Generated PDF names use `job-title__company__short-job-id.pdf`, preserving distinct
-jobs with repeated titles. Existing names survive source updates. The assignment
-keeps its original filename and job ID.
-
-To add a role, place a PDF directly in the folder and run `ingest`. Its title and
-employer use PDF metadata when present, otherwise the filename and `Local PDF`.
-A rename with unchanged bytes retains identity when exactly one missing document
-matches its hash. Renaming and editing together, or an ambiguous rename, needs
-the existing document ID. To attach another document to a known job:
-
-```bash
-python -m app.main ingest --pdf data/jobs/additional.pdf \
-  --job-id assignment-python-developer --document-id additional-role-information
-```
-
-The `posting-` document-ID namespace is reserved for collected descriptions.
-Nested directories and PDFs outside the input folder are rejected. Identical
-PDFs at different filenames remain separate documents.
-
-#### Updates, deletion, and recovery
-
-1. A renewable two-hour SQL lease prevents overlapping writers and is checked
-   again during publication.
-2. Online collection checks the reviewed wording pin, then compares selected source content and metadata with SQL.
-   Unchanged sources preserve PDF bytes; changes atomically replace a validated
-   PDF at its existing path. Employer-issued PDFs retain their original bytes.
-3. The scanner extracts and normalizes PDF text. Document identity, text hash,
-   and embedding/chunking configuration determine its index version. PDF metadata
-   changes update the file hash without re-embedding identical text. A local PDF
-   edit rebuilds its displayed description from that PDF; saved website text is
-   reused only when its PDF hash matches.
-4. Changed versions stage vector batches of 32. Publication verifies expected
-   chunk IDs and dimensions before switching the active pointer. The version's
-   description, job metadata, source notes and PDF bytes publish with that pointer.
-   Chat, the role panel and PDF downloads all use the complete published version.
-   Failed updates retain the last complete presentation, download and searchable
-   version, even if collection already replaced the local file. A new role stays
-   hidden until it has a completed index. Missing chunks are repaired on retry.
-5. Missing PDFs disable documents; jobs with no enabled documents become
-   `removed`. Cleanup deletes obsolete/inactive vectors. Re-adding a known file
-   restores identity. An online refresh can recreate a deleted configured PDF;
-   remove its source selection too when permanent removal is intended.
-6. SQL history, the manifest, and JSON reports record outcomes. Partial runs exit
-   nonzero. Two successful absence scans close a remote job; HTTP errors retain it.
-
-Version/hash history, presentation JSON and PDF bytes remain in PostgreSQL;
-cleanup removes obsolete vectors. Paths can point to a newer local file, so the
-UI downloads the published version's stored bytes. These retained PDFs increase
-database size. Back up PostgreSQL, the PDF folder, and manifest together. A manifest
-alone cannot recover deleted PDF content. The manual
-`export-corpus --output PATH` command packages current PDFs and metadata for
-sharing; it does not include bookings, checkpoints, or a database backup.
-Without `--output`, it writes `artifacts/job-corpus.zip` in the existing generated
-artifacts directory.
-
-PDFs are limited to 25 MB and extracted page streams to 20 MB. Scanned or empty
-pages need text-searchable OCR; OCR is not automatic. Generated snapshots include
-source attribution and capture time, use bundled licensed fonts, and reject
-unsupported glyphs. To check content, page bounds, attribution, and rendering:
-
-```bash
-python ops/verify_job_corpus.py
-```
-
-Running the verifier generates reports and rendered pages in
-`artifacts/ingestion/pdf-qa/`. These checks cover PDF content/layout;
-live answer quality requires separate model evaluation.
-
-#### Included source postings
-
-These are captured reference descriptions, not a guarantee of current vacancies.
-Collectors refresh only the selected sources, never discover replacements or apply
-a similarity threshold. ATS adapters also require explicit posting IDs. Collection
-does not scrape LinkedIn or invent requirements.
-
-| Organization | Captured title and source | Local PDF |
-|---|---|---|
-| CheckPayee | [Senior Python Developer – Fraud Detection & Data Analytics](https://verification-of-payee.com/jobs/python-developer) | [PDF](data/jobs/senior-python-developer-fraud-detection-data-analytics__checkpayee__3e6d5053.pdf) |
-| EY | [Senior Consultant - Python Developer (Data Solutions & Analytics)](https://careers.ey.com/ey/job/Toronto-Senior-Consultant-Python-Developer-%28Data-Solutions-%26-Analytics%29-ON-M5H-0B3/1435050133/) | [PDF](data/jobs/senior-consultant-python-developer-data-solutions-analytics__ey__8f98a8e3.pdf) |
-| icogz | [Senior Python Developer](https://www.icogz.com/careers/senior-python-developer) | [PDF](data/jobs/senior-python-developer__icogz__7c0aa073.pdf) |
-| IFON India internet Foundation | [Python Developer](https://iifon.org/wp-content/uploads/2024/05/JD-202402-Python-Developer.pdf) | [PDF](data/jobs/python-developer__ifon-india-internet-foundation__52ebf4c1.pdf) |
-| Linedata | [Python Developer – Pandas Specialist](https://www.linedata.com/job-offer/consultant-python-2026-143) | [PDF](data/jobs/python-developer-pandas-specialist__linedata__d4462be0.pdf) |
-| Rathin Tech | [Python Developer (3–5 Years Experience)](https://www.rathintech.com/careers) | [PDF](data/jobs/python-developer-3-5-years-experience__rathin-tech__dbd0e1e5.pdf) |
-| RITWIK Infotech | [Python Developer](https://www.ritwikinfotech.com/careers) | [PDF](data/jobs/python-developer__ritwik-infotech__69f071da.pdf) |
-| Scry AI | [Python Developer](https://scryai.com/careers/) | [PDF](data/jobs/python-developer__scry-ai__5eca3f35.pdf) |
-| SYMPHONI HR | [Senior Python Developer](https://symphonihr.com/careers/jobs/RtsVsEU7hU2I/) | [PDF](data/jobs/senior-python-developer__symphoni-hr__64b9a081.pdf) |
-| Ubique Systems | [Python Developer](https://www.ubique-systems.com/careers/python-developer-trpd-26-06407) | [PDF](data/jobs/python-developer__ubique-systems__57d455f0.pdf) |
-
-CheckPayee's capture lists `06.07.2025`; its ambiguous numeric date is retained
-without interpreting the month and day. IFON's source URL is dated 2024. SYMPHONI HR
-represents an unnamed financial-services client. Linedata's page heading is
-Consultant - Python, while its description names the Pandas Specialist role; both
-are documented without duplicating the role title. Ubique's Workplace field says
-On-site while its narrative says the work mode is unspecified; its technology
-cards say Required while the narrative says not every listed tool is mandatory.
-Those original statements remain, with source notes advising employer confirmation.
-Specializations include fraud/payments (CheckPayee), banking/lending (EY),
-trading tools (Rathin), and industrial/SAP/GenAI tooling (Ubique). Ubique's required
-and preferred lists overlap. Preserve each source's facts without borrowing
-qualifications, salary, location, or remote policy from other jobs.
-These ten postings are reference data, not additional labeled training examples.
-
-</details>
-
-<a id="reference-scheduling"></a>
-<details>
-<summary><strong>Daily synchronization and worker recovery</strong></summary>
-
-### Daily synchronization
-
-The scheduled command is `ops/run-job-sync.sh`. It reuses `.venv` and reads the
-hosted database connection and OpenAI key from `.env`. Prepare the environment
-first with `./run-full-project.sh`. Scheduled runs do not install dependencies,
-start Streamlit, train models, create interview slots or alter bookings.
-
-The worker refreshes reviewed sources, PDFs, embeddings, descriptions and company
-assets. PostgreSQL leases prevent overlapping corpus writers. Use
-`./ops/run-job-sync.sh --offline` to recheck existing PDFs without fetching sources.
-
-#### macOS
-
-The installer schedules the current user's LaunchAgent at **03:17 Asia/Jerusalem**.
-It requires that system timezone so the trigger follows local daylight-saving changes.
-
-```bash
-# Preview the configuration without installing it.
-python3 ops/install_schedule.py --output /tmp/job-sync.plist
-# Install or replace the schedule.
-python3 ops/install_schedule.py
-launchctl print gui/$(id -u)/com.recruitment.job-sync
-# Run the worker manually.
-./ops/run-job-sync.sh
-# Remove the schedule.
-python3 ops/install_schedule.py --remove
-```
-
-The installed worker runs at **03:17 Asia/Jerusalem** and connects to Neon through
-`.env`. Its plist stores only the command and paths, without credentials. The
-installer uses Python's standard library; the worker requires the prepared venv.
-The user needs a login session and an available host. Use an always-on worker
-host for dependable daily freshness.
-
-#### Linux and hosted workers
-
-Replace both `/opt/recruitment-chatbot` paths in the supplied service with the
-deployment path and prepare `.venv` first. The service user needs access to
-the project environment and its private credentials:
-
-```bash
-mkdir -p ~/.config/systemd/user
-cp ops/recruitment-job-sync.service ops/recruitment-job-sync.timer ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now recruitment-job-sync.timer
-systemctl --user list-timers recruitment-job-sync.timer
-journalctl --user -u recruitment-job-sync.service
-# To stop future scheduled runs:
-systemctl --user disable --now recruitment-job-sync.timer
-```
-
-The timer specifies Asia/Jerusalem and persists missed runs. User-manager
-availability depends on host/login policy. Hosted workers must share the app's
-persistent database, embedding configuration, PDF folder, and manifest.
-A small corpus uses one scheduled command; a separate orchestration platform is
-not needed. A larger pipeline can invoke this same command from its orchestrator.
-
-#### Monitoring and recovery
-
-Runs write SQL history and UUID-named JSON reports under `artifacts/ingestion/`.
-macOS stdout/stderr logs are `scheduled.stdout.log` and `scheduled.stderr.log`;
-rotate append-only logs periodically. Use `ingestion-status` and `index-status`
-to inspect failures. A healthy run has zero failed items and complete indexes.
-
-Source timeouts and errors exit nonzero and need investigation; they do not
-justify deleting jobs. The lease expires after termination, and the next manual or
-scheduled run retries incomplete work. Attach run results to your monitoring
-system for hosted operation; the app sends no automatic email or Slack alerts.
-
-</details>
-
-<a id="reference-evaluation"></a>
-<details>
-<summary><strong>Local fine-tuning, benchmark, and model evaluation</strong></summary>
-
-### Fine-tuning and model evaluation
-
-#### Local Hugging Face Exit Advisor
-
-The trained model is `answerdotai/ModernBERT-base`, base revision
-`8949b909ec900327062f0ebf497f51aef5e6f0c8`. Training updates the encoder and binary
-classification head using 9 training and 3 validation conversations.
-Test conversations are excluded from gradients, checkpoint selection and export
-selection. The five-epoch run uses seed 42, batch size 4, AdamW at learning rate
-0.00002, weight decay 0.01 and training-derived class weights. Selection uses
-validation macro F1, breaking ties with loss. The selected checkpoint is epoch 4:
-validation macro F1 is 0.8992 and validation accuracy is 11/12.
-Test accuracy is 9/11, with zero failures and confusion matrix `[[6, 2], [0, 3]]`
-in `do_not_end`, `end` order. The saved prompted baseline scores 10/11.
-
-Training and inference share one input contract: candidate/assistant history as
-role/content JSON, at most 12 recent messages and 16,000 history characters.
-Phones, emails and recognized credentials are redacted. Left truncation retains
-recent context up to 2,048 tokens. Target labels, future replies, timestamps and
-profile documents are excluded. The classifier advises Main; opt-out, booking
-receipt and conversation-closure guards remain enforced by LangGraph.
-
-All dependencies are in `requirements.txt`, including training/export tools.
-Python 3.13 on Linux/x86-64 uses an official CPU-only PyTorch wheel. Inference
-imports ONNX Runtime and tokenizers without loading PyTorch or Transformers.
-The 267 MB export uses per-channel dynamic INT8 matrix weights and float32
-embeddings. Its predictions match the selected PyTorch checkpoint on all 12
-validation examples. Loading verifies SHA-256 checksums, label order and the
-versioned input contract. A changed or corrupt artifact fails clearly.
+For a terminal conversation:
 
 ```bash
 source .venv/bin/activate
-# Train and export locally; does not activate or upload the model.
+python -m app.main chat --job-id assignment-python-developer
+```
+
+</details>
+
+## Architecture
+
+**One Main Agent. Three specialist advisors. One candidate-facing reply.**
+
+```mermaid
+flowchart TD
+    UI[Candidate in Streamlit] --> Guard[Input validation and redaction]
+    Guard --> Profile[Optional profile intake]
+    Profile --> Main[Main Agent]
+    Main <-->|Job questions| Info[Info Advisor]
+    Main <-->|Availability and booking| Scheduling[Scheduling Advisor]
+    Main <-->|Closure advice| Exit[Fine-tuned Exit Advisor]
+    Info --> DB[(PostgreSQL and pgvector)]
+    Scheduling --> DB
+    Main --> Output[Validate reply and booking receipt]
+    Output --> Followups[Contextual follow-up questions]
+    Followups --> Reply[Continue / Schedule / End]
+    Main -. History and checkpoints .-> DB
+    classDef main fill:#255441,stroke:#255441,color:#ffffff
+    classDef advisor fill:#edf4ee,stroke:#739681,color:#183d2c
+    classDef data fill:#fff0e7,stroke:#d47c59,color:#663924
+    classDef pipeline fill:#f4f3ee,stroke:#b3bba8,color:#24382d
+    class Main main
+    class Info,Scheduling,Exit advisor
+    class DB data
+    class UI,Guard,Profile,Output,Followups,Reply pipeline
+```
+
+Main consults advisors one at a time and reviews their outputs. Different unanswered
+questions may require another consultation; repeated identical work and consultation
+limits stop loops. Main owns the final action. Python composition and output guards
+preserve citations, booking receipts, and the distinction between opt-out and
+completed scheduling.
+
+| Component | Responsibility | Model/tool |
+|---|---|---|
+| Main | Choose advisors, review advice, and coordinate the next action. | GPT-4o mini |
+| Info | Decide whether information is needed and answer from selected-role evidence. | GPT-5 nano decision, GPT-4o mini answer, pgvector retrieval |
+| Scheduling | Interpret preferences and call validated calendar functions. | GPT-4o mini with strict function arguments and PostgreSQL |
+| Exit | Recommend `end` or `do_not_end`; a label alone cannot invent a booking. | Fine-tuned ModernBERT, ONNX Runtime CPU |
+| Profile intake | Extract grounded facts and preserve source evidence, conflicts, and explicit corrections. | GPT-5 nano extraction; GPT-4o mini chat revisions |
+| Follow-ups | Suggest three candidate-facing questions with validated fallbacks. | GPT-5 nano |
+| Offline judge | Score explicitly supplied answer/evidence packets. | GPT-4o mini; never invoked in normal chat |
+
+<details>
+<summary><strong>Guardrails, consent, and recovery</strong></summary>
+
+- Only candidate/assistant dialogue roles enter runtime history. Untrusted documents
+  and retrieved text supply evidence rather than authority to book or close a chat.
+- Recognizable credentials are redacted before model calls, persistence, and display.
+  Context and document limits bound input sizes; patterns do not constitute general PII removal.
+- Retrieval is filtered by job and complete published document versions. Output
+  citations must belong to the evidence supplied for that request.
+- Qualification-list requests expand retrieval to complete indexed qualification
+  sections. Source bullets retain their required, preferred or optional categories
+  and every clause. Missing checklist items get at most one model revision, with
+  the complete source checklist as fallback. Technology-specific questions select
+  relevant source bullets and retain their source categories. Other questions use
+  ordinary RAG. The Info Advisor uses separate prompts for ordinary answers and
+  checklist responses, with the same answer model.
+- Calendar tools validate timezone/date inputs, offered slot identity, candidate
+  selection, and explicit acceptance before SQL writes. Strict tool schemas include
+  all required nullable arguments. Database constraints and conditional updates
+  protect against competing bookings and overlapping calendar additions.
+- Clear opt-outs, including polite declines, close without extra questions. Contextual
+  opt-outs require a complete, verbatim candidate clause and Exit agreement; uncertain
+  intent gets one yes/no confirmation. Quoted, conditional, or fabricated evidence
+  cannot authorize closure. Privacy refusals keep the conversation open.
+- Closure confirmation is scoped to its conversation. Choosing an offered appointment
+  remains booking consent. A confirmed interview requires a durable booking receipt;
+  a pure thank-you after booking closes with the `scheduled` reason.
+- Request IDs, conversation locks, durable response receipts, and graph checkpoints
+  support retries without repeating completed model calls or bookings. Interrupted
+  profile intake and follow-up generation resume from completed checkpoints.
+- Candidate inputs and queued requests belong to a specific conversation. Reset
+  clears candidate fields and upload selections; stale requests and progress replies
+  cannot populate a different conversation. An empty profile prompts fresh background
+  details when the candidate asks about their own name or experience.
+- Main classifies requests as recruitment-related, off-topic or mixed within its
+  routing call. Off-topic replies use a short redirect and keep the conversation
+  active, with no job retrieval, calendar action or generated follow-up questions.
+  Mixed requests pass verified recruitment clauses to the relevant advisors and
+  add a brief scope explanation. Booking consent also checks the original message.
+- Technical logs use identifiers, timing, counts, and sanitized error codes. Raw prompts,
+  credentials, and candidate messages are excluded from technical diagnostics.
+
+The PoC has no candidate authentication or cross-device recovery. Conversation IDs
+are not an authorization system. Document parsing is not a hardened hostile-file
+sandbox. Read [SECURITY.md](SECURITY.md) before handling real candidate information.
+
+</details>
+
+## Configuration
+
+Application defaults live in [app/config.py](app/config.py). Credentials belong in
+`.env` or Streamlit deployment secrets. Restart the app or notebook kernel after
+changing settings.
+
+<details>
+<summary><strong>Model, retrieval, and runtime settings</strong></summary>
+
+| Setting | Default or purpose |
+|---|---|
+| `chat_model` | `gpt-4o-mini`: Main, Info answers, Scheduling, and chat-profile updates. |
+| `helper_model` | `gpt-5-nano`: Info decisions, profile extraction, follow-ups, and the optional prompted Exit baseline. |
+| `judge_model` | `gpt-4o-mini`: explicitly invoked answer-quality evaluation. |
+| `exit_provider` | Local activation selects `huggingface`; otherwise defaults to `openai`. Cloud explicitly selects `huggingface`. |
+| `hf_exit_local_path` | `artifacts/hf-exit/runtime/` for a locally activated model. |
+| `hf_exit_revision` | Expected SHA-256 of the verified ONNX model. |
+| `hf_exit_repo_id` | Optional private Hugging Face runtime repository. |
+| `hf_exit_repo_revision` | Required immutable 40-character commit when a repository is configured. |
+| `embedding_model` / `embedding_dimensions` | `text-embedding-3-small` / `None` for the model default. |
+| `business_timezone` | `UTC` fallback; the UI detects the browser timezone. |
+| `request_timeout` / `max_retries` | 30 seconds / 2 retries. |
+| `max_output_tokens` / `model_temperature` | 1,500 / 0.0 for GPT-4o mini, with operation-specific token caps. |
+| `max_advisor_consultations` | Three advisor visits per user turn. |
+| `chunk_size` / `chunk_overlap` | 900 / 120 characters. |
+| `pipeline_version` / `dataset_version` | `jobs-v1` / `assignment-v1`. |
+| `job_data_path` | `data/`, with PDF inputs under `jobs/`. |
+| `job_sources_path` / `job_manifest_path` | `config/job_sources.json` / `config/job_corpus_manifest.json`. |
+| `corpus_limit` | Ten explicitly selected online postings. |
+| `conversation_export_path` | Git-ignored `artifacts/conversations.json`. |
+| `ingestion_report_path` / `log_level` | `artifacts/ingestion/` / `INFO`. |
+
+`Settings.model_policy()` records operation-specific models and parameters. GPT-4o
+mini receives system instructions and temperature 0; GPT-5 nano receives developer
+instructions, omits temperature, and uses low reasoning effort for extraction/Exit
+or minimal effort for Info decisions/follow-ups. Completion caps are 512 for prompted
+Exit, 1,024 for Info decisions, 768 for follow-ups, and up to 1,500 for other calls.
+Reasoning tokens count toward those limits.
+
+Prompts are in `app/prompts/`. Role instructions, schema constraints, and independently
+written few-shot examples are kept separate from user context. Runtime inputs do not
+include benchmark labels or future turns. Model-family changes require compatible API
+parameters and fresh evaluation. There is no automatic escalation to a more expensive
+model. Cost estimates are dated standard-token estimates, not account billing totals.
+
+</details>
+
+The deployed app and activated local installation use **fine-tuned ModernBERT through
+ONNX Runtime on CPU**. Community Cloud downloads three runtime files from an immutable
+private Hugging Face commit; candidate dialogue is not sent to Hugging Face. A fresh,
+unconfigured checkout uses the prompted OpenAI Exit baseline until a trained artifact
+is explicitly configured. See [deployment](#deployment) for pinned runtime settings.
+
+## Data and storage
+
+The application uses one hosted **PostgreSQL 17 database on Neon**, with pgvector for
+retrieval and durable LangGraph checkpoints. The catalog has **11 PDFs, 22 pages,
+57 published chunks**, and **1,536-dimensional embeddings**. Published complete
+versions determine which chunks can be retrieved.
+
+Credentials, private conversations, benchmark records, and model weights remain
+outside Git. Supplied labels are stored separately from interactive predictions.
+
+<details>
+<summary><strong>Storage tables, exports, and data boundaries</strong></summary>
+
+| Stored information | Tables |
+|---|---|
+| Companies, source policy, roles, documents and versions | `companies`, `job_sources`, `jobs`, `job_documents`, `document_versions` |
+| Ingestion coordination | `ingestion_runs`, `sync_leases` |
+| Vector retrieval | `rag_collections`, `rag_chunks` |
+| Availability and booking receipts | `interview_slots`, `interview_bookings` |
+| Conversations and candidate evidence | `conversations`, `conversation_messages`, `candidate_sources`, `candidate_profiles` |
+| Sanitized execution metadata | `trace_spans` |
+| Supplied labeled benchmark | `dataset_conversations`, `dataset_turns` |
+| Durable graph state | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations` |
+
+There are 22 tables. [Storage models](app/storage/models.py), [catalog models](app/ingestion/models.py),
+and [RAG models](app/rag/models.py) define columns and constraints.
+
+Conversation exports preserve ordered candidate/recruiter turns, timestamps,
+source/profile summaries, and predicted actions. Generated conversation labels remain
+NULL until independently verified. Supplied benchmark labels are stored separately
+and are never overwritten by interactive model predictions.
+
+`.gitignore` excludes credentials, private benchmark JSON, processed datasets, model
+weights, backups, conversation exports, logs, launcher state, and caches. Public
+source PDFs, `.env.example`, configuration, and fictitious fixtures remain tracked.
+The raw benchmark and contact metadata stay private; they are not screenshot material.
+
+</details>
+
+## Evaluation
+
+### Held-out benchmark
+
+Saved results are dated **November 8, 2026** and are presented in the executed
+[evaluation notebook](tests/test_evals.ipynb). The benchmark contains 15 conversations
+and 59 labeled recruiter turns. Splits are by complete conversation: nine training,
+three validation, and three test conversations. The held-out test has 11 labeled
+turns, including eight candidate-response turns.
+
+| Evaluation | Correct / evaluated | Accuracy | Execution failures |
+|---|---:|---:|---:|
+| Main workflow with prompted OpenAI Exit · all turns | 6 / 11 | 54.5% | 0 |
+| Main workflow with prompted OpenAI Exit · candidate-response turns | 3 / 8 | 37.5% | 0 |
+| Prompted Exit · GPT-5 nano | 10 / 11 | 90.9% | 0 |
+| Fine-tuned Exit · ModernBERT | 9 / 11 | 81.8% | 0 |
+
+> **Reading these results:** The Main scores use the prompted OpenAI Exit baseline.
+> A held-out Main evaluation for the deployed ModernBERT combination is still required.
+
+The classifier comparison uses the same held-out partition. ModernBERT's two errors
+are false `end` recommendations, and its
+confusion matrix is `[[6, 2], [0, 3]]` in `do_not_end`, `end` order.
+
+These results cover only three held-out conversations. Historical recruiter calendar
+state and verified slot IDs are unavailable, so action-label agreement does not
+establish booking correctness. Benchmark measurements, live synthetic checks, and
+mocked automated tests answer different questions.
+
+### Fine-tuning and reproducibility
+
+<details>
+<summary><strong>Training recipe, validation selection, and ONNX integrity</strong></summary>
+
+ModernBERT base revision `8949b909ec900327062f0ebf497f51aef5e6f0c8` is fine-tuned locally.
+The five-epoch run uses seed 42, batch size 4, AdamW with learning rate 0.00002, weight
+decay 0.01, and training-derived class weights. Validation macro F1 selects epoch 4
+(0.8992 macro F1, 11/12 validation accuracy). Test data is excluded from gradients,
+checkpoint selection, and export selection.
+
+Training and inference use role/content JSON with at most 12 recent messages,
+16,000 history characters, and 2,048 tokens. Phones, emails, and recognizable
+credentials are redacted; labels, future replies, timestamps, and profile documents
+are excluded. Left truncation preserves recent context. The INT8 ONNX export matches
+the selected PyTorch model on all 12 validation examples. Runtime loading checks
+SHA-256, label order, and the versioned input contract.
+
+```bash
+source .venv/bin/activate
+python -m app.main prepare-data
 python -m app.main fine-tune-hf
-# Evaluate the unchanged held-out partition without uploads or OpenAI calls.
 python -m app.main evaluate-exit-hf
-# Activate on this machine and restart its local app.
 python -m app.main activate-exit-hf
 ./run-full-project.sh --restart --no-browser
 ```
 
-Weights, tokenizer, activation receipt and aggregate training history remain under
-Git-ignored `artifacts/hf-exit/`; the held-out report is
-`artifacts/exit_test_huggingface.json`. Public base-model downloads are cached in
-`artifacts/huggingface/`. A local activation receipt selects the classifier on this
-machine. Community Cloud uses the existing private repository at an immutable
-commit, downloading only model.onnx, tokenizer.json and exit_classifier.json.
-Existing checksum and input-contract checks validate those files before inference.
-Set `Settings.exit_provider` to `openai` for an explicit baseline comparison.
-Provider and artifact identity are recorded in evaluation and tracing metadata.
+Training/export stays under Git-ignored `artifacts/hf-exit/`. These commands do not
+upload the model. The existing private runtime repository is configured separately
+for Cloud. All Python runtime, training, testing, and notebook dependencies are in
+`requirements.txt`; Linux/x86-64 Python 3.13 uses the pinned CPU-only PyTorch wheel.
+Inference imports ONNX Runtime/tokenizers without PyTorch or Transformers.
 
-`classifier/exit` spans record artifact identity, measured input tokens, truncation,
-decision and latency without input text. Tokens are marked nonbillable; zero API
-cost refers to local inference and excludes hardware cost.
+</details>
 
-#### Benchmark and dataset preparation
+<details>
+<summary><strong>Evaluation commands, saved reports, and data isolation</strong></summary>
 
-The supplied labeled dataset is stored in PostgreSQL as version `assignment-v1`:
-15 conversations, 103 turns, and 59 labeled recruiter turns (25 continue,
-19 schedule, 15 end). There are 15 opening messages and 44 replies to candidate
-messages. Records retain source IDs, timestamps, text, labels, contact metadata,
-the source fingerprint and the 9/3/3 conversation split.
-
-Set `dataset_version` in `app/config.py` to select a verified benchmark version.
-Preparation, evaluation, and the notebook read these two database tables directly.
-They fail with a restore instruction when the requested version is absent.
-Neon retains the imported benchmark alongside the application tables. A fresh
-independent database needs that benchmark restored from a trusted backup before
-these workflows run. Interactive chat and PDF ingestion do not require it.
-
-For private backups, use PostgreSQL 17+ client tools and the provider's direct
-connection. With the plain `postgresql://` URI in `.env`, the following exports
-only the two benchmark tables:
-
-```bash
-umask 077
-set -a
-source .env
-set +a
-pg_dump --dbname="$DATABASE_URL" --format=custom --no-owner --no-privileges \
-  --table=public.dataset_conversations --table=public.dataset_turns \
-  --file=/secure/path/benchmark.dump
-pg_restore --list /secure/path/benchmark.dump
-```
-
-Restore data only into initialized, empty benchmark tables:
-
-```bash
-pg_restore --dbname="$DATABASE_URL" --data-only --no-owner --no-privileges \
-  /secure/path/benchmark.dump
-```
-
-Keep archives private because they contain original text and contact metadata.
-Full database backups also preserve runtime history, bookings and checkpoints.
-Restore a full archive into an empty recovery database and verify it before use.
-See the official [PostgreSQL backup tool documentation](https://www.postgresql.org/docs/17/app-pgdump.html).
-
-```bash
-python -m app.main prepare-data
-```
-
-Generated files in `data/processed/` include a hashed manifest and conversation-grouped
-`train.json`, `validation.json` and `test.json` prefixes. The manifest records the dataset version, original source
-hash, current snapshot hash, and stored split IDs. The assignment benchmark retains
-36/12/11 labeled examples in its 9/3/3 conversation partitions. Inputs exclude target responses, future turns, annotations, and phone
-metadata; phone/email patterns are redacted. Few-shot prompt illustrations are
-independent of evaluation examples.
-
-The Exit Advisor emits exactly `end` or `do_not_end`, covering disinterest and
-successful closure. Its recommendation cannot bypass booking validation. Local
-Hugging Face training reads the stored benchmark directly; startup never trains
-models. Evaluate the prompted baseline with an explicit provider:
+The authoritative supplied benchmark is loaded from its PostgreSQL dataset tables.
+`prepare-data` writes `data/processed/{manifest,train,validation,test}.json` with
+conversation grouping and dataset/source fingerprints. Notebook code reads saved
+reports and does not invoke model APIs; it can read private benchmark metadata locally.
 
 ```bash
 python -m app.main evaluate --split test --task actions --exit-provider openai --output artifacts/actions_test_baseline.json
 python -m app.main evaluate --split test --task exit --exit-provider openai --output artifacts/exit_test_baseline.json
+python -m app.main evaluate --task workflow --input tests/fixtures/workflow_cases.json --output artifacts/workflow_evaluation.json
+python -m app.main evaluate --task quality --input tests/fixtures/quality_cases.json --output artifacts/quality_evaluation.json
 ```
 
-The required [evaluation notebook](tests/test_evals.ipynb) includes accuracy,
-confusion matrices, per-class metrics, a training-derived majority baseline, and
-error analysis, including the local Hugging Face comparison.
-The notebook reads saved reports and the PostgreSQL benchmark; it makes no model calls.
-One shared styling cell provides consistent typography, blue/teal bars and confusion
-heatmaps with counts and row shares on a fixed 0–100% color scale. Figures include
-crisp PNG and SVG notebook outputs; chart styling does not change saved metrics.
-On a fresh checkout, restore the private benchmark, run `prepare-data` and explicitly
-run the evaluation commands above with authorized data to create the ignored reports.
-Then execute the notebook. Share its aggregate outputs rather than private examples.
+OpenAI evaluations make paid API calls with their explicitly selected inputs. Local
+`evaluate-exit-hf` uses the trained artifact without OpenAI calls or dialogue uploads.
+Do not upload private benchmark text, contact metadata, or credentials to public
+issues, commits, screenshots, or external evaluation services.
 
-Action evaluation runs the application's graph on historical prefixes. Exit
-evaluation measures the advisor directly. Reports identify model/provider, task,
-model policy, prompt hashes and instruction roles, dataset version and snapshot
-hash, split, all-turn and candidate-response metrics, and failures. Compare baseline
-and fine-tuned variants on identical held-out data and save distinct reports with
-`--output`. Tune prompts on validation; `--split all` is descriptive.
+Main/Exit reports retain model policy, prompt identity, split, dataset fingerprint,
+failures, and confusion matrices. Failures receive no accuracy credit. Opening turns
+and candidate-response turns are reported separately. The notebook compares the
+prompted and fine-tuned Exit reports only when fingerprints and held-out rows match.
 
-Limitations to retain when interpreting results:
+Controlled workflow replay uses independently authored fictitious cases and isolated
+calendar state. Gold expectations stay outside model inputs. The saved six-case replay
+covers 15 steps, including consent, mixed questions, alternatives, and relative-date
+changes across a week boundary. It passes 15/15 steps.
 
-- No verified historical recruiter calendar was supplied. Evaluation uses an empty,
-  isolated calendar and never modifies interactive bookings.
-- Transcripts lack verified slot receipts; action-label agreement cannot establish
-  historical availability or operational booking correctness.
-- Conversation 9 labels a confirmation/information turn as `continue`; conversation
-  8 continues after a message suggesting disinterest. Preserve labels and inspect disagreements.
-- Hybrid-work and ECS claims in transcripts are absent from the PDF.
-- Only three conversations are held out. Extra job PDFs add reference material,
-  not labeled examples; live answer quality still needs separate assessment.
-
-Historical reports are explicitly marked `historical_prefix`, with booking correctness
-unassessed. Overall accuracy gives failed calls no credit, even if a safe fallback
-matches the expected label. Reports separately include successful-call accuracy,
-coverage and failure rate. Confusion matrices add a `failure` prediction category
-when failures occur. Provider error messages and conversation text are not saved.
-
-For operational booking correctness, run a separate controlled replay:
-
-```bash
-python -m app.main evaluate --task workflow \
-  --input tests/fixtures/workflow_cases.json \
-  --output artifacts/workflow_evaluation.json
-```
-
-The six independently authored fictitious cases contain 15 turns. Each case
-retains offered slot IDs, booking receipts and in-memory graph checkpoints across
-turns. Calendar rows live in a disposable SQL schema, which is removed afterward;
-production slots, bookings and conversations stay untouched. The replay uses the
-case's provided job description rather than the production PDF index. Expected
-outcomes and selector ordinals never enter model context; selected ordinals resolve
-only to slot IDs actually offered to that conversation. Reports store checks and
-counts without message/answer text. Existing trace spans record case identifiers
-and model/tool metadata. This is separate from historical label accuracy and makes
-no claim to reconstruct a missing recruiter calendar. Follow-up generation and
-uploaded-profile processing are outside its scope. The cases also verify partial
-availability, explicit hard limits and preference timestamps across a week boundary;
-`elapsed_seconds` controls the fictitious clock between turns.
+The offline quality judge receives bounded question/answer/evidence packets rather
+than unrestricted database access. Grounding cannot be scored without adequate
+source evidence. Missing judge output remains unscored. Judge ratings are separate
+from action accuracy and are not a substitute for human review.
 
 </details>
 
-<a id="reference-quality"></a>
+## Testing and live verification
+
+Verified on **November 22, 2026**. The suite contains **127 Python tests across
+13 modules**, plus **five browser-control tests**. Integration model/HTTP calls are
+mocked; live-model scenarios below are separate runs with fictitious messages.
+Closure, candidate-reset, qualification and scope checks use this checkout against an isolated database with the
+configured Main model and fine-tuned Exit classifier. Screenshots show the hosted app.
+
+| Verification layer | Recorded result | What it establishes |
+|---|---|---|
+| Python suite | **127 / 127 passed** | Deterministic unit and isolated integration checks. |
+| Browser controls | **5 / 5 passed** | Printing, recording/download, errors, cancellation, and cleanup. |
+| Live-model scenarios | Separate focused checks | Behavior on fictitious questions; distinct from benchmark accuracy. |
+
 <details>
-<summary><strong>Offline answer-quality judge</strong></summary>
+<summary><strong>Detailed checks and live-model verification scope</strong></summary>
 
-### Offline answer-quality judge
-
-The LLM judge supplements the required labeled Continue/Schedule/End accuracy and
-confusion matrices. It evaluates the assistant's answers, not candidates. Run it
-explicitly through the CLI; it is not a LangGraph advisor and never runs after
-normal chat messages. Its dedicated client uses `Settings.judge_model` (GPT-4o mini),
-the existing output-token limit and temperature, and `app/prompts/judge.txt`.
-
-Start with the six independently authored fictitious cases. They include a supported
-answer, invented compensation, an offered-slot receipt falsely described as booked,
-missing evidence, missing required follow-ups, and grading instructions inside an
-answer. They are rubric anchors, not human-rated benchmark records. Their means
-describe this intentional mix of good and bad answers, not production chatbot quality.
-
-```bash
-python -m app.main evaluate --task quality \
-  --input tests/fixtures/quality_cases.json \
-  --output artifacts/quality_evaluation.json
-```
-
-Each selected case makes one structured judge invocation; there is no refinement
-loop or automatic escalation. SDK retries still follow `max_retries`. The default
-limit is 20 cases; `--limit` accepts 1-200. The JSON input can contain at most 200
-cases and 2 MiB; each evidence packet is bounded to 50,000 characters. Oversized or
-invalid packets are rejected before model calls rather than silently truncated.
-`--split` is for labeled evaluation; quality evaluation uses only the supplied file.
-
-Input packets contain a question, recent user/assistant history, answer, follow-ups,
-their applicability, and the exact source excerpts/calendar receipts available for
-that answer. Evidence IDs must be unique; receipt `text` can contain the original
-tool-result JSON. No current PDF, live conversation or benchmark content is fetched
-automatically. Use `evidence_complete=true` only when the required original evidence
-has been supplied; a current PDF is not proof of the evidence used by an older answer.
-Missing or incomplete evidence makes grounding `not_assessable`, with a null score.
-
-For example, a single case can look like:
-
-```json
-{
-  "case_id": "role-skills",
-  "question": "Which skills are required?",
-  "history": [],
-  "answer": "Python and SQL are required. [jd-1]",
-  "followups": [
-    "Which Python projects should I discuss?",
-    "How can I explain my experience with SQL?",
-    "What should I prepare for an interview?"
-  ],
-  "followups_expected": true,
-  "sources": [{"evidence_id": "jd-1", "text": "Python and SQL are required."}],
-  "calendar_receipts": [],
-  "evidence_complete": true
-}
-```
-
-Put cases in a top-level JSON list. Include relevant history when grading repetition
-and follow-up continuity. `followups_expected=null` means applicability is unknown;
-false means questions are not required, such as after closure. Both are unassessable
-for that dimension. True with no questions is scored 1. Omit `human_scores` until
-a human reviewer has supplied them. A reviewer can add, for example,
-`"human_scores": {"grounding": 4, "completeness": 5}` to calibrate those dimensions.
-These reference ratings and case identity are excluded from the judge request.
-
-| Dimension | What it measures |
+| Check | Result and scope |
 |---|---|
-| Grounding | Support for claims and citations in supplied excerpts/receipts; invented facts or false booking claims score poorly |
-| Completeness | Whether the candidate's requested points are addressed, including honest explanations of missing information |
-| Relevance and clarity | Direct, readable, useful answers, without rewarding verbosity |
-| Follow-up quality | Distinct, relevant candidate questions that avoid repetition, unsupported assumptions and unauthorized actions |
-
-The prompt defines anchors for every integer from 1 (poor) to 5 (strong), with brief
-observable reasons and evidence references. A schema validates rating/status
-consistency and restricts references to the supplied IDs; each reported issue needs
-a reference. Application checks reject
-invented reference IDs, omit issues for top/unassessable scores, and enforce missing
-evidence/applicability rules. A failed/refused/malformed judge call leaves the case
-unscored and records only the error class; later cases continue. There is no overall
-pass threshold and no score is used to change live conversation behavior.
-
-The report contains per-dimension means, score distributions, scored/unassessable/
-failed counts, reasons, problems, evidence hashes, prompt/model identifiers and
-per-case trace IDs. It omits input text. Human-reference agreement reports comparable
-counts, mean absolute error, exact agreement and within-one agreement, excluding
-unscored ratings. With no references, agreement is null, not a fabricated percentage.
-Scores supplied as human references are caller annotations; code cannot verify who
-authored them. Review disagreements before relying on the judge at scale.
-
-PostgreSQL trace spans store root `evaluation/quality` and child `llm/judge`
-metadata, model/prompt identity, latency, tokens and reported estimated cost.
-Quality evaluation does not create checkpoint threads or conversation messages. Technical traces
-omit questions, answers, excerpts, judge reasons and reference scores. The report
-is atomically replaced with owner-only permissions and ignored by Git; keep it
-private because model reasons may quote evaluated content. Costs exclude unreported
-usage and SDK-internal retries. A diagnostic failure does not trigger another grade.
-
-The default judge also generates some chatbot answers, so shared-model and style
-bias remain possible. These scores are advisory estimates, and supplied receipts
-are not independently authenticated. SQL booking checks and labeled action metrics
-remain authoritative. The [evaluation notebook](tests/test_evals.ipynb) reads the
-saved report without making additional quality calls. See OpenAI's
-[evaluation guidance](https://developers.openai.com/api/docs/guides/evaluation-best-practices#llm-as-a-judge-and-model-graders).
-
-The fixture command sends only its fictitious packets to OpenAI. For other files,
-obtain authorization to transmit their contents before running the command; it
-does not automatically select or send the stored private benchmark.
-
-The private saved quality report (`artifacts/quality_evaluation.json`) contains
-six fictitious cases, recorded usage and validated references. Human calibration
-is not available; fixture results do not establish production accuracy.
+| Automated Python suite | 127/127 passed against disposable PostgreSQL databases. |
+| Browser control suite | Five checks cover printing, recording/download, cancellation, errors, and capture cleanup. |
+| Live-model closure scenarios | 24/24 focused scenarios and six additional checks passed, including polite declines, privacy refusals, negation, quotations, hypotheticals, slot rejection, and booking acknowledgments. Ambiguous withdrawals were confirmed explicitly. |
+| Live job questions | Nine focused live rechecks passed against the complete assignment PDF: required/preferred coverage, typo handling, database obligation, preferred technologies and mixed salary/booking requests. |
+| Browser profile/reset flow | Fictitious PDF, introduction and LinkedIn inputs cleared on New conversation; the original profile stayed saved. The next conversation had no reused sources or candidate facts. |
+| Unspecified facts | Salary and guaranteed remote-work questions referred to the recruiter rather than inventing terms. |
+| Off-topic and mixed requests | 17 real-model scenarios passed: brief weather/recipe/unrelated-code redirects, relevant technical questions, mixed role/calendar requests, preserved offers, booking completion, opt-out and privacy controls. |
+| Security requests | Credential, hidden-prompt, and private-candidate disclosure requests received a refusal and stayed open in the focused check. Legitimate questions about job credentials continued normally. No configured secrets were disclosed or unauthorized booking created. |
+| Untrusted inputs | A fake credential, malicious profile instructions, and a corrupt PDF were exercised. These checks supplement deterministic guardrail tests. |
+| Scheduling | Availability, mixed job/time questions, ambiguous acceptance, invalid slot selection, rejection, and explicit confirmation exercised in isolation. |
+| Booking writes | Intentional fictitious bookings use disposable QA databases; no hosted booking created for verification or screenshots. |
+| Startup recovery | Terminated checkpoint connections are replaced before reuse. Transient startup/read failures receive at most three attempts. Outage/retry checks preserve conversation IDs, pending request IDs, introductions, links and uploads; an uncertain booking response still produces one booking. Configuration/authentication failures stop without automatic retries or exposing error details. |
 
 </details>
 
-<a id="reference-tests"></a>
+A run of synthetic scenarios does not establish production security or benchmark
+accuracy. Completeness/relevance observations are listed under
+[limitations](#limitations-and-next-steps). Startup recovery is verified against
+an isolated local database; hosted verification requires deploying this checkout.
+
+### Run checks
+
 <details>
-<summary><strong>Automated checks and test commands</strong></summary>
-
-### Automated checks
-
-The suite contains **124 Python tests across 14 modules**, plus **5 browser-control
-checks**: **129 automated checks** in total.
-
-The required `tests/test_evals.ipynb` is executed, with saved accuracy and
-confusion-matrix outputs. The automated suite emphasizes these behaviors:
-
-| Test modules | Main coverage |
-|---|---|
-| `integration/test_conversation.py`, `test_openai_adapter.py` | Main/advisor routing, continue/schedule/end, SQL tool calling, checkpoint recovery and representative chat/helper model contracts |
-| `integration/test_scheduling.py`, `unit/test_scheduling_rules.py` | Approved calendar additions, overlaps/concurrency, expiration, relative dates/timezones, confirmation, alternatives and booking conflicts |
-| `integration/test_rag.py` | PDF ingestion/update/rename/removal, job isolation, atomic publication, repair, JSONB ingestion outcomes, startup readiness and logo refresh |
-| `integration/test_guardrails.py`, `test_profiles.py`, `unit/test_documents.py` | Consent, untrusted inputs, redaction, citations, profile isolation/recovery, document formats, safe markup and remote-image validation |
-| `integration/test_observability.py`, `test_suggestions.py` | Conversation JSON, trace/token metadata, retry safety and contextual follow-up persistence/fallbacks |
-| `integration/test_evaluation.py`, `unit/test_evaluation_rules.py` | Labeled splits, leakage prevention, local classifier integrity, grouped benchmark exports and offline judge reports |
-| `integration/test_streamlit.py`, `unit/test_startup.py` | Role/chat and appointment UI smoke tests, venv startup, hosted TLS and credential preservation |
-| `unit/test_page_actions.mjs` | Printing, recording/download, cancellation and capture cleanup |
+<summary><strong>Lint, unit tests, browser controls, and the isolated full suite</strong></summary>
 
 ```bash
-python -m pytest -q
+source .venv/bin/activate
+python -m pytest -q tests/unit
 python -m ruff check app streamlit_app tests ops
 python -m ruff format --check app streamlit_app tests ops
-```
-
-The browser controls also have lifecycle tests using Node.js 22+ and its built-in
-test runner:
-
-```bash
 node --test tests/unit/test_page_actions.mjs
 ```
 
-These checks substitute the browser capture APIs and verify printing, video
-downloads, cancellation, errors, and capture cleanup. Node.js is used only for
-these checks; running the Python app requires no frontend build.
+Node.js 22+ is used only for browser-control tests; the app needs no frontend build.
+For the full suite, use a separate PostgreSQL/pgvector server with CREATE DATABASE
+permission. This example creates a disposable local server and changes only the
+current shell's database variables:
 
-Unit checks can run without PostgreSQL with `python -m pytest -q tests/unit`.
-Integration tests create temporary PostgreSQL databases and require a development
-role with CREATE DATABASE permission; `TEST_DATABASE_URL` can select a separate
-test server. Tests cover booking confirmation/concurrency, conversation recovery,
-job-isolated retrieval, PDF updates/recovery, reviewed source collection, mocked
-function calling, automatic background intake, multi-format readers, profile recovery,
-advisor reconsultation and negative decisions,
-loop bounds, Streamlit, input rules, and dataset integrity.
-Calendar checks also cover approved date windows, daylight-saving validation,
-concurrent overlapping additions, read-only appointment previews, expiration,
-SQL timezone filters, searches beyond 30 days and fresh alternatives after a
-booking conflict. Model/HTTP calls remain mocked throughout these checks.
+```bash
+docker run --rm -d --name recruitment-tests \
+  -p 127.0.0.1:55432:5432 \
+  -e POSTGRES_PASSWORD=local-test-password pgvector/pgvector:pg17
+export TEST_DATABASE_URL=postgresql://postgres:local-test-password@127.0.0.1:55432/postgres
+export DATABASE_URL="$TEST_DATABASE_URL"
+python -m pytest -q
+docker stop recruitment-tests
+unset DATABASE_URL TEST_DATABASE_URL
+```
 
-[tests/conftest.py](tests/conftest.py) shares clocks, calendar fixtures, API mocks,
-and storage isolation. Live model/HTTP calls are blocked in integration tests.
-Run lint, formatting, unit checks, and integration workflows locally with Python 3.13
-and PostgreSQL/pgvector. All dependencies, including notebook and PDF tools, are
-pinned in the single `requirements.txt`; update it directly and rerun checks.
+Wait for PostgreSQL to accept connections before starting pytest. Each integration
+case gets a temporary database; fixtures remove it afterward. Setting both variables
+keeps the run independent of the application's hosted `.env` connection.
+
+Tests retain coverage for Main/advisor routing, selected-role RAG, booking consent and
+concurrency, relative dates/timezones, guardrails, profile intake and correction,
+checkpoint recovery, follow-up fallbacks, model contracts/integrity, evaluation data
+isolation, and Streamlit flows. [tests/conftest.py](tests/conftest.py) contains shared
+clocks, mocks, and storage fixtures.
 
 </details>
 
-<a id="reference-deployment"></a>
+## Project structure
+
 <details>
-<summary><strong>Community Cloud deployment</strong></summary>
+<summary><strong>Repository map</strong></summary>
 
-### Deployment
-
-Community Cloud is explicitly required by [TASK.md](TASK.md). The application is
-[deployed here](https://technion-genai-recruitment-assistant.streamlit.app) with
-Python 3.13 and the repository’s `streamlit_app/streamlit_main.py` entry point.
-The hosted database is PostgreSQL 17/pgvector on Neon in Frankfurt. Its 22-table
-schema stores the job catalog, 57 active RAG chunks, recruiter calendar, bookings,
-conversations, benchmark, logs and graph checkpoints. Credentials and provisioning
-records stay Git ignored. Use the provider’s direct connection with TLS and channel
-binding for persistent graph checkpoints. Cloud uses the fine-tuned Exit model
-from the pinned private repository; inference runs on CPU inside the app.
-
-1. Use the source and PDF inputs in this GitHub repository. Keep credentials,
-   benchmark records, generated exports, conversation files and local reports excluded.
-2. Select `streamlit_app/streamlit_main.py` and Python 3.13.
-3. Provision persistent PostgreSQL with pgvector; configure TLS according to the provider.
-4. Set `OPENAI_API_KEY` and `DATABASE_URL` through deployment secrets. For the
-   trained Exit model, preserve these existing settings:
-
-   ```toml
-   EXIT_PROVIDER = "huggingface"
-   HF_EXIT_REPO_ID = "sapir-pirski/technion-recruitment-exit-8bfb0c30"
-   HF_EXIT_REPO_REVISION = "b743e0bfa41f7253a54dc5ec0abf6f878bed422c"
-   HF_EXIT_REVISION = "8bfb0c30560f6069412ff19210678ce1ca6f5c8b08b5db3fb92375c9ff631582"
-   HF_TOKEN = "<private repository read token>"
-   ```
-5. Initialize the hosted schema and run ingestion against that database before use.
-   Transfer only the intended role configuration and recruiter-approved availability;
-   do not copy local candidate histories, bookings or private benchmark records by default.
-   Verify retrieval, timezone handling, booking confirmation/concurrency, opt-out and
-   checkpoint recovery before retiring any source database.
-6. Run daily ingestion on a worker with durable PDFs/manifest and the hosted
-   database connection. The installed macOS native worker runs at 03:17
-   Asia/Jerusalem; Community Cloud itself does not run this background schedule.
-   Its host must be available for the scheduled work.
-
-Cloud deployments connect to hosted PostgreSQL directly and use `requirements.txt`
-and `packages.txt`. The local application uses the same code through `.venv`.
-Keep credentials, candidate
-data, generated training files, and logs out of version control. Public use with
-real candidates needs the access controls described in [SECURITY.md](SECURITY.md).
+```text
+README.md                 Setup, usage, evaluation, operations, and contribution guide
+TASK.md                   Assignment requirements
+app/
+  main.py                 CLI entry point
+  config.py, schemas.py   Settings and data contracts
+  service.py              Conversation service and request recovery
+  graph/, agents/         Main/advisor loop, profile intake, composition, follow-ups
+  prompts/, tools/        Role prompts, strict calendar calls, date/preferences parsing
+  guardrails.py           Input, context, tool-consent, and output validation
+  profiles.py             Document readers and grounded profile merging
+  suggestions.py          Starters and contextual fallback questions
+  calendar.py             Approved calendar management
+  storage/                PostgreSQL repositories and models
+  rag/, ingestion/        PDF catalog, collection, indexing, retrieval, source images
+  fine_tuning/            ModernBERT training, input contract, ONNX export
+  evaluation/             Benchmark preparation, metrics, workflow replay, offline judge
+  observability/          Structured logs, tracing, token usage, cost estimates
+streamlit_app/            UI, startup recovery, profile controls, browser components
+assets/
+  readme-hero.png         Original cover illustration
+  screenshots/            Deployed-app screenshots with fictitious details
+config/                   Selected posting policy and public PDF manifest
+data/jobs/                Eleven public input PDFs
+.streamlit/config.toml    Theme and minimal toolbar
+tests/
+  unit/                   Pure input, model, launcher, and document checks
+  integration/            Isolated storage, workflow, retrieval, and UI checks
+  fixtures/               Fictitious workflow and quality scenarios
+  conftest.py             Shared test fixtures
+  test_evals.ipynb         Evaluation notebook with saved metrics and plots
+ops/                      Launcher support, daily sync, PDF verification
+requirements.txt          Single file for pinned Python dependencies
+packages.txt              LibreOffice system package for Community Cloud
+run-full-project.sh       Local environment setup and app lifecycle
+pyproject.toml            Package metadata, pytest, and Ruff configuration
+SECURITY.md               Security boundaries and private reporting
+CONTRIBUTORS.md           Project authors
+LICENSE.md                MIT license for project code
+```
 
 </details>
 
-## People and license
+## Operations
 
-**Menachem Twersky · Sapir Pirski**
-
-Technion GenAI final project. See [CONTRIBUTORS.md](CONTRIBUTORS.md).
-
-Project code is released under the **[MIT license](LICENSE.md)**. For private
-vulnerability reporting and deployment considerations, read [SECURITY.md](SECURITY.md).
-This academic proof of concept has no candidate authentication or cross-device
-conversation recovery.
-
-<a id="reference-notices"></a>
 <details>
-<summary><strong>Third-party notices and resource attribution</strong></summary>
+<summary><strong>PDF ingestion, catalog maintenance, and source attribution</strong></summary>
 
-### Third-party notices
+All role PDFs live in `data/jobs/`; the assignment PDF is the authoritative document
+for its role. `config/job_sources.json` pins ten explicitly selected public postings.
+`config/job_corpus_manifest.json` records identities, capture/source metadata, and
+hashes. Automatic discovery and automatic replacement of postings are disabled.
 
-Company logos, job descriptions and source payloads belong to their respective employers or
-publishers. Generated snapshots preserve attribution and capture time; they are
-not employer-issued PDFs, endorsements, or a grant of redistribution rights.
-The MIT license for this project's code does not relicense third-party content.
+```bash
+python -m app.main list-jobs
+python -m app.main index-status
+python -m app.main ingestion-status
+python -m app.main ingest
+python -m app.main sync-jobs --cleanup
+python -m app.main sync-jobs --offline --cleanup
+python -m app.main export-corpus --output artifacts/job-corpus.zip
+python ops/verify_job_corpus.py
+```
 
-The regular, bold, oblique and bold-oblique DejaVu Sans fonts in
-`app/ingestion/fonts/` are DejaVu fonts,
-bundled from the Matplotlib distribution. Their Bitstream Vera and
-DejaVu notices and license are reproduced in
-[LICENSE_DEJAVU.txt](app/ingestion/fonts/LICENSE_DEJAVU.txt). These fonts are bundled
-for reproducible PDF generation with accented characters and symbols.
+`ingest` reads all local PDFs; `ingest --pdf PATH --job-id ID` attaches a PDF to an
+existing role. `sync-jobs` refreshes approved sources and then indexes the folder.
+`--offline` skips collection, while new/changed text still needs OpenAI embeddings.
+Unchanged complete indexes are reused. An ingestion lease prevents overlapping writers.
 
-Python dependencies retain their own licenses. The supplied conversation dataset,
-stored in PostgreSQL, and the assignment PDF in `data/jobs/` retain their owners' rights.
+New vectors are staged and verified before a version is published. Failed refreshes
+preserve the last complete active version. PDF renames preserve document identity;
+removed PDFs can retire their documents and stale vectors during explicit cleanup.
+Embedding configuration changes use a separate collection identity. Company-logo
+refresh is independent of PDF text/embeddings and retains an existing usable image
+on fetch failures.
+
+The original assignment PDF and the IFON employer-issued PDF retain their source
+bytes. Other selected postings are attributed PDF snapshots of reviewed public job
+content. Markdown structure, source URL, capture time, and required/preferred sections
+are preserved. Bundled DejaVu fonts support reproducible rendering. Unreadable or
+unsupported content fails explicitly. Source content remains untrusted input.
+
+Source URLs and exact PDF identities are available in the public manifest rather
+than duplicated in this document. Review source terms before redistributing content.
 
 </details>
 
-[Back to top](#top)
+<details>
+<summary><strong>Calendar management and interview receipts</strong></summary>
+
+```bash
+python -m app.main calendar status --job-id assignment-python-developer --timezone Asia/Jerusalem
+python -m app.main calendar add --help
+```
+
+Calendar additions require explicit `--from-date`, `--to-date`, `--weekdays`,
+`--start-time`, `--end-time`, `--timezone`, `--duration-minutes`, and `--job-id`.
+Preview a new approved range with `--dry-run` before applying it. Existing or
+past dates and overlapping appointments are rejected atomically; a preview is not
+approval to invent recruiter availability. Diagnostics may still be recorded.
+
+The configured calendar ends December 31, 2026. Only future, available, unbooked
+slots are offered. Constraints stated as “only” remain hard constraints; nearby
+alternatives are labeled when allowed. Timezone filtering occurs in SQL before
+limiting offers. A relative preference keeps its message-time reference through
+checkpoint recovery; an explicit date change receives a new reference.
+
+Selecting an appointment opens UI review; canceling review performs no booking.
+SQL receipts determine actual confirmation. Conflicts refresh availability and
+require a new selection. Completed bookings and history remain stored when starting
+a new conversation. Calendar invitations and automatic calendar extension are absent.
+
+</details>
+
+<details>
+<summary><strong>Daily worker, diagnostics, and exports</strong></summary>
+
+The optional worker runs `ops/run-job-sync.sh`, reusing `.venv` and `.env`. Community
+Cloud does not run this background schedule. A scheduled host needs durable PDFs,
+the manifest, database access, and availability at the configured time.
+
+For macOS, the host timezone must be Asia/Jerusalem:
+
+```bash
+python ops/install_schedule.py --output /tmp/job-sync.plist
+python ops/install_schedule.py
+./ops/run-job-sync.sh
+python ops/install_schedule.py --remove
+```
+
+The installation uses a per-user launch agent at 03:17. Linux examples are
+`ops/recruitment-job-sync.service` and `ops/recruitment-job-sync.timer`; replace the
+example paths before enabling them as user services. The timer specifies
+Asia/Jerusalem. Use `--offline` on the worker to recheck local files without fetching.
+
+```bash
+python -m app.main doctor
+python -m app.main export-conversations
+```
+
+Doctor reports model/configuration status without printing credentials. Conversation
+exports are private JSON snapshots under `artifacts/`. Export replacement is atomic
+and owner-only. The database remains authoritative. Ingestion reports and worker logs
+are in `artifacts/ingestion/`; launcher output is in `artifacts/launcher/`.
+
+Trace spans distinguish interactive work, ingestion, and evaluation. LLM usage keeps
+reported counts, cached tokens, model/prompt identities, and failure status. Missing
+usage stays unknown; local classifier tokens are nonbillable. Private benchmark
+backups, generated datasets, trained artifacts, and deployment credentials must remain
+outside Git. Keep related model/data artifacts together as a verified set.
+
+</details>
+
+## Deployment
+
+The [Community Cloud app](https://technion-genai-recruitment-assistant.streamlit.app)
+runs `streamlit_app/streamlit_main.py` on Python 3.13. `requirements.txt` provides
+Python dependencies; `packages.txt` installs `libreoffice-writer` for `.doc` support.
+The database is hosted PostgreSQL/pgvector with TLS. Use a direct connection suitable
+for persistent graph checkpoints and preserve the existing schema and bookings.
+
+<details>
+<summary><strong>Community Cloud secrets and the pinned Exit runtime</strong></summary>
+
+Set `OPENAI_API_KEY` and `DATABASE_URL` in Streamlit secrets. The trained Exit
+configuration uses the existing pinned private artifact:
+
+```toml
+EXIT_PROVIDER = "huggingface"
+HF_EXIT_REPO_ID = "sapir-pirski/technion-recruitment-exit-8bfb0c30"
+HF_EXIT_REPO_REVISION = "b743e0bfa41f7253a54dc5ec0abf6f878bed422c"
+HF_EXIT_REVISION = "8bfb0c30560f6069412ff19210678ce1ca6f5c8b08b5db3fb92375c9ff631582"
+HF_TOKEN = "<private repository read token>"
+```
+
+Only `model.onnx`, `tokenizer.json`, and `exit_classifier.json` are downloaded.
+Loading verifies their integrity and input contract before local CPU inference.
+There is no silent provider fallback when a configured model cannot load. A fresh
+checkout without local activation defaults to the prompted baseline; repository
+access and model selection must be configured explicitly to use the trained model.
+
+Initialize the schema and publish PDF indexes before use. Keep a separate durable
+worker for scheduled source refresh. Validate role isolation, dates/timezones,
+consent, duplicate-request safety, and opt-out after deployment. Never publish
+candidate exports, benchmark records, model weights, or secrets through this repository.
+
+</details>
+
+## Limitations and next steps
+
+| Current limitation | Next step |
+|---|---|
+| Main benchmark agreement is 54.5% on only 11 held-out turns; verified historical calendar context is unavailable. | Diagnose errors on training/validation data and preserve the frozen test partition. |
+| Unrecognized or conflicting withdrawal statements can require explicit confirmation. Synthetic closure checks do not establish benchmark accuracy. | Extend development coverage using training/validation cases and keep the held-out test partition frozen. |
+| Checklist coverage supports recognized qualification headings and bullet lists within bounded indexed documents. Unstructured prose and unusual headings use ordinary RAG without exhaustive coverage validation. | Extend section-format coverage and review general-answer completeness. |
+| Scope classification uses Main's interpretation; mixed requests need separable recruitment clauses. Ambiguous wording may require rephrasing. | Extend development coverage while preserving verified intent, original-message consent and the frozen test split. |
+| The startup recovery in this checkout awaits hosted verification. | Deploy the checkout and repeat cold-start and idle-connection checks on Community Cloud. |
+| No candidate authentication, authorization, or cross-device recovery; file parsing is not a hostile-document sandbox. | Add access controls, retention policies, deployment hardening, and file isolation before real candidate use. |
+| LinkedIn links are references; invitation sending and automatic calendar extension are absent. | Add integrations only with explicit scope, access, and recruiter approval. |
+| The benchmark and saved report inputs are private, so a new checkout cannot reproduce those outputs without authorized data access. | Supply approved private inputs or use the public fictitious fixtures for workflow checks. |
+
+## Contributing
+
+1. Read [TASK.md](TASK.md) and keep changes aligned with the assignment and existing user flow.
+2. Set up the environment and create a focused branch. Use fictitious candidate data.
+3. Run unit checks and the relevant integration tests against a disposable database.
+   Run Ruff and browser-control checks when their code changes.
+4. Open a pull request describing the problem, resulting behavior, validation, and
+   remaining limitations. Include screenshots for visible UI changes.
+5. Keep credentials, private conversations, contact metadata, model weights, and
+   generated reports out of the pull request. Report vulnerabilities privately
+   according to [SECURITY.md](SECURITY.md).
+
+All contribution instructions remain in this README; [CONTRIBUTORS.md](CONTRIBUTORS.md)
+lists the project authors.
+
+### Contact
+
+- [Bugs and feature requests](https://github.com/sapir-pirski/technion-genai-recruitment-assistant/issues/new): include a fictitious reproduction, expected behavior, and sanitized diagnostics.
+- [Security or private-data concerns](SECURITY.md): use the project's private reporting route.
+- [Repository](https://github.com/sapir-pirski/technion-genai-recruitment-assistant) · [Project authors](CONTRIBUTORS.md).
+
+### People and license
+
+**Menachem Twersky · Sapir Pirski** — Technion GenAI final project.
+See [CONTRIBUTORS.md](CONTRIBUTORS.md).
+
+Project code is released under the [MIT license](LICENSE.md). Company logos, job
+content, the assignment PDF, and the supplied conversation dataset retain their
+owners' rights; the code license does not relicense those resources or imply employer
+endorsement. Generated snapshots preserve source attribution and capture metadata.
+
+<a id="acknowledgments"></a>
+
+<details>
+<summary><strong>Acknowledgments and source attribution</strong></summary>
+
+- The Technion GenAI course and supplied recruitment assignment/data.
+- [Python](https://www.python.org/), [Streamlit](https://streamlit.io/), and [LangChain/LangGraph](https://www.langchain.com/) for the application stack.
+- [OpenAI](https://platform.openai.com/) for chat and embedding APIs.
+- [Hugging Face](https://huggingface.co/) and [ModernBERT](https://huggingface.co/answerdotai/ModernBERT-base) for local Exit-model training and artifact hosting.
+- [PostgreSQL](https://www.postgresql.org/), [pgvector](https://github.com/pgvector/pgvector), and [Neon](https://neon.com/) for durable storage and retrieval.
+- The employers and publishers identified in [the PDF manifest](config/job_corpus_manifest.json) for source job content.
+- DejaVu/Bitstream Vera fonts bundled from Matplotlib for reproducible PDF rendering;
+  see [LICENSE_DEJAVU.txt](app/ingestion/fonts/LICENSE_DEJAVU.txt).
+
+</details>
+
+---
+
+<p align="center">
+  <strong>Recruitment Assistant</strong> · Technion GenAI final project<br>
+  <a href="TASK.md">Assignment</a> · <a href="LICENSE.md">License</a> · <a href="SECURITY.md">Security</a> · <a href="#top">Back to top ↑</a>
+</p>

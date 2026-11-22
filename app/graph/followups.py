@@ -20,7 +20,16 @@ def suggest_followups(backend, state):
         result = dict(state["result"])
         history = state.get("suggestion_history", [])
         questions, source, outcome, error_code = [], "none", "closed", None
-        if result["conversation_status"] != "closed":
+        if state.get("awaiting_opt_out_confirmation"):
+            outcome = "awaiting_confirmation"
+        off_topic = state.get("turn_intent", {}).get("request_scope") == "off_topic"
+        if off_topic:
+            outcome = "off_topic"
+        if (
+            result["conversation_status"] != "closed"
+            and not state.get("awaiting_opt_out_confirmation")
+            and not off_topic
+        ):
             try:
                 if result.get("error"):
                     outcome = "answer_failed"

@@ -3,6 +3,7 @@
 import hashlib
 import re
 
+from app.agents.backends.common import scoped_advisor_state
 from app.schemas import SuggestedQuestion
 
 STARTER_QUESTIONS = (
@@ -17,6 +18,7 @@ def question_key(text):
 
 
 def suggestion_context(state):
+    state = scoped_advisor_state(state)
     result = state["result"]
     return {
         "job": state.get("job_context", {}),

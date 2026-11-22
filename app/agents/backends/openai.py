@@ -20,6 +20,7 @@ from app.schemas import (
     JudgeResult,
     Plan,
     ProfileSections,
+    QualificationAnswer,
 )
 
 
@@ -208,11 +209,33 @@ class OpenAIBackend:
             ),
         )
 
-    def info(self, question: str, excerpts: list[dict], history=None) -> InfoAnswer:
+    def info(
+        self,
+        question: str,
+        excerpts: list[dict],
+        history=None,
+        *,
+        requirements=None,
+        missing_requirement_ids=None,
+    ) -> InfoAnswer:
+        schema = QualificationAnswer if requirements else InfoAnswer
+        operation = "info_qualifications" if requirements else "info"
+        output_schema = schema.model_json_schema()
+        if requirements:
+            output_schema["properties"]["requirement_ids"]["items"]["enum"] = [
+                item["id"] for item in requirements
+            ]
+            output_schema["properties"]["source_ids"]["items"]["enum"] = [
+                item["id"] for item in excerpts
+            ]
+        data = {"question": question, "excerpts": excerpts, "history": history or []}
+        if requirements:
+            data.update(
+                requirements=requirements, missing_requirement_ids=missing_requirement_ids or []
+            )
         return self._structured(
-            InfoAnswer,
-            "info",
-            self._messages(
-                "info", {"question": question, "excerpts": excerpts, "history": history or []}
-            ),
+            schema,
+            operation,
+            self._messages(operation, data),
+            output_schema=output_schema,
         )

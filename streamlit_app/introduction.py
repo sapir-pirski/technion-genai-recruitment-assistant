@@ -32,11 +32,15 @@ def clear_introduction_inputs():
             st.session_state.pop(key, None)
 
 
+def input_key(name):
+    return f"introduction_{st.session_state.conversation_id}_{name}"
+
+
 def context_snapshot():
-    upload = st.session_state.get("introduction_file")
+    upload = st.session_state.get(input_key("file"))
     return {
-        "introduction": st.session_state.get("introduction_text", ""),
-        "linkedin_url": st.session_state.get("introduction_linkedin_url", ""),
+        "introduction": st.session_state.get(input_key("text"), ""),
+        "linkedin_url": st.session_state.get(input_key("linkedin_url"), ""),
         "file_name": upload.name if upload is not None else None,
         "file_data": upload.getvalue() if upload is not None else None,
     }
@@ -56,30 +60,30 @@ def render_introduction(busy, profile=None):
         "Introduce yourself", expanded=bool(failures), icon=":material/person_outline:"
     ):
         introduction, linkedin, upload = st.tabs(
-            ["Introduction", "LinkedIn", "Upload file"], key="introduction_tabs"
+            ["Introduction", "LinkedIn", "Upload file"], key=input_key("tabs")
         )
         with introduction:
             st.text_area(
                 "Tell us about yourself",
-                key="introduction_text",
+                key=input_key("text"),
                 max_chars=4000,
                 placeholder="Share your Python experience, relevant skills and projects.",
                 height=140,
                 disabled=busy,
             )
             source_errors(
-                profile, "introduction", st.session_state.get("introduction_text", "").strip()
+                profile, "introduction", st.session_state.get(input_key("text"), "").strip()
             )
         with linkedin:
             st.text_input(
                 "LinkedIn reference URL",
-                key="introduction_linkedin_url",
+                key=input_key("linkedin_url"),
                 max_chars=500,
                 placeholder="https://www.linkedin.com/in/your-name/",
                 help="Saved as a reference. The assistant does not fetch or read the profile page. Add background in Introduction or Upload file.",
                 disabled=busy,
             )
-            value = st.session_state.get("introduction_linkedin_url", "").strip()
+            value = st.session_state.get(input_key("linkedin_url"), "").strip()
             try:
                 linkedin_reference(value)
             except ProfileReadError as error:
@@ -90,12 +94,12 @@ def render_introduction(busy, profile=None):
             st.file_uploader(
                 "Upload your CV or profile",
                 type=["pdf", "doc", "docx", "txt"],
-                key="introduction_file",
+                key=input_key("file"),
                 max_upload_size=5,
                 disabled=busy,
                 help="Up to 5 MB. PDFs: at most 10 pages; all documents: at most 24,000 characters. Scans require OCR.",
             )
-            if upload := st.session_state.get("introduction_file"):
+            if upload := st.session_state.get(input_key("file")):
                 source_errors(
                     profile, "file", upload.getvalue(), safe_filename(upload.name.strip())
                 )

@@ -72,6 +72,21 @@ def test_pdf_ingestion_is_idempotent_and_retrieves_sources():
     assert second["status"] == "unchanged" and first["chunks"] == second["chunks"]
     results = JobRetriever(settings).search("Python experience and required skills")
     assert results and all(item["id"] and item["page"] >= 1 for item in results)
+    items = [entry for result in results for entry in result.get("qualification_items", [])]
+    assert len(items) == 6 and {entry["category"] for entry in items} == {"required"}
+    text = " ".join(entry["text"] for entry in items)
+    assert all(
+        term in text
+        for term in ("SQL", "NoSQL", "problem-solving", "communication", "collaboration")
+    )
+    returned = {result["id"] for result in results}
+    assert all(set(entry["source_ids"]) <= returned for entry in items)
+    narrow = JobRetriever(settings).search("Are SQL and NoSQL mentioned in the description?")
+    evidence = [entry for result in narrow for entry in result.get("qualification_items", [])]
+    assert len(evidence) == 1 and evidence[0]["category"] == "required"
+    preferred = JobRetriever(settings).search("Are AWS, Django and Flask mandatory requirements?")
+    evidence = [entry for result in preferred for entry in result.get("qualification_items", [])]
+    assert len(evidence) == 2 and {entry["category"] for entry in evidence} == {"preferred"}
 
 
 def test_role_filter_never_returns_another_job(settings):

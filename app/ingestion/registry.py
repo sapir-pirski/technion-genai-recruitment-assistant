@@ -30,8 +30,12 @@ class JobRegistry:
     def __init__(self, settings):
         self.engine = make_engine(settings.database_url)
         self.collection = settings.index_collection
-        initialize_database(self.engine)
-        self.ensure_original()
+        try:
+            initialize_database(self.engine)
+            self.ensure_original()
+        except Exception:
+            self.close()
+            raise
 
     def close(self):
         self.engine.dispose()

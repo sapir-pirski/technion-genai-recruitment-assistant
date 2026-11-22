@@ -17,13 +17,22 @@ Usage: ./run-full-project.sh [--port NUMBER] [--no-browser]
        ./run-full-project.sh --status|--logs|--stop|--restart
 
 Reuse/install Python 3.11+ (prefer 3.13), create/repair .venv, install only
-missing/changed requirements, check hosted PostgreSQL and published PDF indexes,
-verify an activated local Exit model, start the app, and open the browser after readiness.
-Install LibreOffice when supported. Startup does not train or download model weights.
+missing/changed dependencies from requirements.txt, check hosted PostgreSQL and
+published PDF indexes, verify the configured Exit model, and start the app.
+Open the browser after readiness; install LibreOffice for DOC uploads when needed.
+Use local model files or download the explicitly configured pinned runtime artifact.
+Model training is a separate command.
 --port is explicit; otherwise reuse this project's port or choose a free one.
 --stop preserves data and affects only this launcher's managed process.
 PYTHON_BIN selects a native interpreter. No credentials are printed or overwritten.
 HELP
+}
+set_port() {
+    local value="$1"
+    [[ "$value" =~ ^[0-9]{1,5}$ ]] || fail "Use a port between 1 and 65535."
+    port=$((10#$value))
+    [[ "$port" -ge 1 && "$port" -le 65535 ]] || fail "Use a port between 1 and 65535."
+    explicit_port=yes
 }
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -34,12 +43,8 @@ while [[ $# -gt 0 ]]; do
             action="${1#--}"; shift ;;
         --port|--server.port)
             [[ $# -ge 2 ]] || fail "Supply a port between 1 and 65535."
-            [[ "$2" =~ ^[0-9]+$ ]] && [[ "$2" -ge 1 && "$2" -le 65535 ]] || fail "Use a port between 1 and 65535."
-            port="$2"; explicit_port=yes; shift 2 ;;
-        --server.port=*)
-            port="${1#*=}"
-            [[ "$port" =~ ^[0-9]+$ ]] && [[ "$port" -ge 1 && "$port" -le 65535 ]] || fail "Use a port between 1 and 65535."
-            explicit_port=yes; shift ;;
+            set_port "$2"; shift 2 ;;
+        --port=*|--server.port=*) set_port "${1#*=}"; shift ;;
         *) streamlit_args+=("$1"); shift ;;
     esac
 done

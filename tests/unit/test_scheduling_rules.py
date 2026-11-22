@@ -2,7 +2,6 @@ from datetime import UTC, date, datetime, time
 
 import pytest
 
-from app.agents.backends.common import explicit_stop
 from app.calendar import availability_times
 from app.tools.dates import parse_date, parse_time
 
@@ -67,13 +66,3 @@ def test_timezone_changes_reference_day():
 def test_ambiguous_time_requires_clarification():
     with pytest.raises(ValueError):
         parse_time("3")
-
-
-def test_negated_opt_out():
-    for text in (
-        "Do not stop texting me",
-        "What happens if I accepted another job?",
-        "I am not interested in frontend work; I am interested in this Python role.",
-        'My old application says "not interested", but I want to continue here.',
-    ):
-        assert not explicit_stop(text)

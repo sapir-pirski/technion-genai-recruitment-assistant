@@ -4,7 +4,7 @@ from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 
 from app.agents import exit_advisor, info_advisor, main_agent, scheduling_advisor
-from app.agents.backends.common import explicit_stop, latest_text
+from app.agents.backends.common import explicit_stop, latest_text, scoped_advisor_state
 from app.graph.chat_profile import build_chat_profile, should_update_chat
 from app.graph.followups import suggest_followups
 from app.graph.profile_ingestion import build_profile_ingestion, should_ingest
@@ -38,6 +38,7 @@ def build_graph(backend, repository, retriever, checkpointer, profiles=None, *, 
                 )
                 item.attributes.update(
                     decision=updates["plan"]["next_advisor"],
+                    request_scope=updates["plan"]["request_scope"],
                     consultation_count=state.get("consultation_count", 0),
                     stop_reason=updates["routing_stop_reason"],
                 )
@@ -111,7 +112,12 @@ def build_graph(backend, repository, retriever, checkpointer, profiles=None, *, 
         result = checked["result"]
         try:
             questions = [item["text"] for item in result["suggested_questions"]]
-            if result["conversation_status"] == "closed" or not followups:
+            if (
+                result["conversation_status"] == "closed"
+                or not followups
+                or state.get("awaiting_opt_out_confirmation")
+                or state.get("turn_intent", {}).get("request_scope") == "off_topic"
+            ):
                 result.update(suggested_questions=[], suggestion_source="none")
             else:
                 FollowupQuestions(questions=questions)
@@ -138,11 +144,21 @@ def build_graph(backend, repository, retriever, checkpointer, profiles=None, *, 
     )
     graph.add_node(
         "scheduling_advisor",
-        advisor("scheduling", lambda state: scheduling_advisor.advise(backend, repository, state)),
+        advisor(
+            "scheduling",
+            lambda state: scheduling_advisor.advise(
+                backend, repository, scoped_advisor_state(state, "scheduling")
+            ),
+        ),
     )
     graph.add_node(
         "info_advisor",
-        advisor("info", lambda state: info_advisor.advise(backend, retriever, state)),
+        advisor(
+            "info",
+            lambda state: info_advisor.advise(
+                backend, retriever, scoped_advisor_state(state, "info")
+            ),
+        ),
     )
     graph.add_node("compose", finalize)
     if profiles is not None:

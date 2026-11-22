@@ -12,7 +12,9 @@ from app.evaluation.judge import QualityCase, assess_case, load_cases
 from app.evaluation.metrics import summarize
 
 
-def test_examples_exclude_target_and_future_turns(benchmark_conversations):
+def test_benchmark_examples_preserve_splits_and_exclude_target_and_future_turns(
+    benchmark_conversations,
+):
     examples = build_examples(benchmark_conversations)
     assert len(examples) == 9
     assert Counter(row["label"] for row in examples) == {"continue": 3, "schedule": 3, "end": 3}
@@ -25,10 +27,6 @@ def test_examples_exclude_target_and_future_turns(benchmark_conversations):
         assert [message["content"] for message in row["history"]] == [
             redact(turn["text"]) for turn in prefix
         ]
-
-
-def test_conversation_splits_and_timestamp_validation(benchmark_conversations):
-    examples = build_examples(benchmark_conversations)
     partitions = {
         name: {row["conversation_id"] for row in split_examples(examples, name)}
         for name in SPLIT_NAMES

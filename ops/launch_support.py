@@ -79,7 +79,7 @@ def exit_model_identity():
         "provider": settings.exit_provider,
         "policy": settings.model_policy()["exit"],
         "local_path": str(settings.hf_exit_local_path)
-        if settings.exit_provider == "huggingface"
+        if settings.exit_provider == "huggingface" and not settings.hf_exit_repo_id
         else None,
     }
 
@@ -91,15 +91,17 @@ def verify_exit_model():
         settings = Settings()
         if settings.exit_provider == "openai":
             return "Exit Advisor: prompted OpenAI model."
-        from app.agents.backends.huggingface import verify_local_artifact
+        from app.agents.backends.huggingface import artifact_directory, verify_local_artifact
 
-        verify_local_artifact(settings.hf_exit_local_path, settings.hf_exit_revision)
+        verify_local_artifact(artifact_directory(settings), settings.hf_exit_revision)
     except Exception:
         raise RuntimeError(
-            "The activated local Exit model is missing, changed or incompatible. "
-            "Restore its verified files in artifacts/hf-exit/ and activate it again."
+            "The configured Exit model is missing, changed, inaccessible or incompatible. "
+            "Restore its verified files and activation in artifacts/hf-exit/, or check "
+            "HF_EXIT_REPO_ID, HF_EXIT_REPO_REVISION, HF_EXIT_REVISION and HF_TOKEN."
         ) from None
-    return "Exit Advisor: locally fine-tuned ModernBERT verified."
+    source = "pinned Hugging Face artifact" if settings.hf_exit_repo_id else "local artifact"
+    return f"Exit Advisor: fine-tuned ModernBERT verified ({source})."
 
 
 def hosted_database_url(value):

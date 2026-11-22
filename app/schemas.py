@@ -10,10 +10,18 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class RecruitmentRequest(StrictModel):
+    kind: Literal["info", "scheduling", "profile", "exit"]
+    text: str
+
+
 class Plan(StrictModel):
+    request_scope: Literal["recruitment", "off_topic", "mixed"]
+    recruitment_requests: list[RecruitmentRequest] = Field(max_length=8)
     next_advisor: Literal["exit", "scheduling", "info", "respond"]
     stop_requested: bool
     closure_reason: Literal["opt_out", "scheduled"] | None
+    opt_out_evidence: str | None
     declined_slot_ids: list[int]
     info_question: str | None
     scheduling_needed: bool
@@ -104,9 +112,18 @@ class ScheduleRequest(StrictModel):
 
 
 class InfoAnswer(StrictModel):
-    answer: str
+    answer: str = Field(min_length=1)
     source_ids: list[str]
     supported: bool
+
+
+class QualificationAnswer(InfoAnswer):
+    answer: str = Field(
+        description="The application renders the supplied qualification checklist. Answer ALL OTHER requested details here, such as salary, responsibilities or remote work. Explicitly say when an additional requested detail is absent. Use an empty string only when the question asks solely for the checklist. Do not repeat qualification bullets."
+    )
+    requirement_ids: list[str] = Field(
+        description="Every supplied requirements[].id exactly once. On revision include the complete list, including all missing_requirement_ids. The application renders the exact source wording."
+    )
 
 
 QualityDimension = Literal["grounding", "completeness", "relevance_clarity", "followup_quality"]

@@ -44,8 +44,13 @@ def test_postgres_dataset_roundtrip_and_grouped_export(
 
 
 @pytest.mark.parametrize("task", ["actions", "exit"])
-def test_evaluation_uses_stored_splits_and_preserves_benchmark(benchmark_dataset, task, backend):
+def test_evaluation_uses_stored_splits_and_preserves_benchmark(
+    benchmark_dataset, task, backend, service, now
+):
     before = benchmark_dataset.load_conversations()
+    result = service.evaluate_prefix([{"role": "user", "content": "Hello"}], now)
+    assert result.response and not result.suggested_questions
+    backend.suggest_followups.assert_not_called()
     report = evaluate(Settings(), split="test", task=task)
     assert report["all_turns"]["count"] == 3
     assert report["dataset_version"] == "test-v1" and len(report["dataset_sha256"]) == 64
@@ -65,6 +70,7 @@ def test_evaluation_uses_stored_splits_and_preserves_benchmark(benchmark_dataset
     assert failed["all_turns"]["failures"] > 0
     assert all(row["predicted"] is None for row in failed["rows"] if row["error"])
     assert "private provider error" not in json.dumps(failed)
+    backend.suggest_followups.assert_not_called()
 
 
 def test_stateful_workflow_replay_preserves_public_calendar_and_excludes_expectations(
@@ -86,6 +92,9 @@ def test_stateful_workflow_replay_preserves_public_calendar_and_excludes_expecta
         seen.append(state)
         done = {item["advisor"] for item in state.get("advisor_results", [])}
         return Plan(
+            request_scope="recruitment",
+            recruitment_requests=[],
+            opt_out_evidence=None,
             next_advisor="respond" if "scheduling" in done else "scheduling",
             stop_requested=False,
             closure_reason=None,

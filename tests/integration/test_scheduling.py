@@ -3,10 +3,14 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 
+import httpx
 import pytest
+from langchain_openai import ChatOpenAI
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
+from app.agents.backends.common import prompt_spec
+from app.agents.backends.openai import OpenAIBackend
 from app.config import Settings
 from app.graph.builder import build_graph
 from app.ingestion.models import DEFAULT_JOB_ID
@@ -259,3 +263,124 @@ def test_calendar_rejects_past_additions_without_mutating_slots(calendar_reposit
         )
     with Session(repo.engine) as session:
         assert session.scalar(select(func.count()).select_from(Slot)) == 5
+
+
+def test_function_call_executes_validated_calendar_tool(repository, now):
+    seen = []
+
+    def handle(request):
+        payload = json.loads(request.content)
+        seen.append(payload)
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "gpt-4o-mini",
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "tool_calls",
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call_calendar",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "manage_interview",
+                                        "arguments": json.dumps(
+                                            {
+                                                "date_text": "today",
+                                                "time_text": None,
+                                                "period": None,
+                                                "selected_slot_id": None,
+                                                "accepts_slot": False,
+                                            }
+                                        ),
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ],
+            },
+        )
+
+    settings = Settings(_env_file=None, openai_api_key="test-not-a-real-key")
+    backend = OpenAIBackend(settings)
+    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+        backend.chat = ChatOpenAI(
+            model=settings.chat_model, api_key="test-not-a-real-key", http_client=client
+        )
+        state = {
+            "messages": [{"role": "user", "content": "Any appointments today?"}],
+            "reference_time": now.isoformat(),
+            "timezone": "UTC",
+            "conversation_id": "mock",
+            "request_id": "r1",
+            "offered_slots": [],
+            "candidate_profile": {"private_profile_details": "not needed for calendar queries"},
+        }
+        result = backend.schedule(state, scheduling_tool(repository, state))
+    assert result["status"] == "offered"
+    assert len(result["slots"]) == 3
+    assert result["decision"] == "schedule"
+    assert seen[0]["tool_choice"] == "auto"
+    assert seen[0]["tools"][0]["function"]["name"] == "manage_interview"
+    definition = seen[0]["tools"][0]["function"]
+    assert definition["strict"] is True
+    assert definition["parameters"]["additionalProperties"] is False
+    assert set(definition["parameters"]["required"]) == {
+        "date_text",
+        "time_text",
+        "period",
+        "selected_slot_id",
+        "accepts_slot",
+    }
+    assert seen[0]["parallel_tool_calls"] is False
+    assert seen[0]["messages"][0]["role"] == "system"
+    assert (
+        seen[0]["messages"][0]["content"]
+        == prompt_spec("scheduling", settings.chat_model)["content"]
+    )
+    assert "candidate_profile" not in json.loads(seen[0]["messages"][1]["content"])
+
+
+def test_scheduling_can_decline_without_querying_calendar(repository, now):
+    content = "do_not_schedule"
+    payload = {
+        "id": "chatcmpl-test",
+        "object": "chat.completion",
+        "created": 1,
+        "model": "gpt-4o-mini",
+        "choices": [
+            {
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {"role": "assistant", "content": content},
+            }
+        ],
+    }
+    backend = OpenAIBackend(Settings(_env_file=None, openai_api_key="test-only-key"))
+    repository.available = Mock()
+    repository.book = Mock()
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=payload))
+    ) as client:
+        backend.chat = ChatOpenAI(model="gpt-4o-mini", api_key="test-only-key", http_client=client)
+        state = {
+            "messages": [{"role": "user", "content": "I use Python."}],
+            "reference_time": now.isoformat(),
+            "timezone": "UTC",
+            "conversation_id": "no-calendar",
+            "request_id": "request",
+        }
+        assert (
+            backend.schedule(state, scheduling_tool(repository, state))["decision"]
+            == "do_not_schedule"
+        )
+    repository.available.assert_not_called()
+    repository.book.assert_not_called()

@@ -7,7 +7,10 @@ def make_engine(url: str) -> Engine:
     if parsed.get_backend_name() != "postgresql":
         raise ValueError("The application requires PostgreSQL with pgvector")
     return create_engine(
-        parsed.set(drivername="postgresql+psycopg"), pool_pre_ping=True, hide_parameters=True
+        parsed.set(drivername="postgresql+psycopg"),
+        pool_pre_ping=True,
+        hide_parameters=True,
+        connect_args={} if "connect_timeout" in parsed.query else {"connect_timeout": 10},
     )
 
 

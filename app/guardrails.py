@@ -55,6 +55,23 @@ class GuardrailViolation(ValueError):
     """A static, user-safe failure without the rejected content."""
 
 
+def privacy_request(text):
+    """Recognize disclosure requests, independently of recruitment exit intent."""
+    return bool(
+        re.search(
+            r"\b(?:show|reveal|print|give|expose|share|display|tell|what (?:is|are))\b", text, re.I
+        )
+        and re.search(
+            r"\b(?:OPENAI_API_KEY|HF_TOKEN|DATABASE_URL|"
+            r"(?:your|configured|internal|stored|actual|exact) (?:passwords?|credentials?|secrets?)|"
+            r"api[ _-]?keys?|(?:hidden |system |developer )+prompts?|"
+            r"(?:previous|other|another) candidate.{0,40}(?:data|messages|details|contact|cv))\b",
+            text,
+            re.I,
+        )
+    )
+
+
 def record(rule_id, stage, outcome, reason_code):
     attributes = dict(rule_id=rule_id, stage=stage, outcome=outcome, reason_code=reason_code)
     with span("guardrail", stage, attributes=attributes):
@@ -143,9 +160,10 @@ def model_data(value, *, operation):
 
 def candidate_accepts(text):
     """Conservative English consent grammar; ambiguous wording asks for confirmation."""
-    text = text.replace("’", "'")
+    from app.agents.backends.common import unquoted_text
+
+    text = unquoted_text(text).replace("’", "'")
     # Quoted documents/code cannot supply acceptance. Preserve the candidate's own clauses.
-    text = re.sub(r"```[\s\S]*?```|`[^`]*`|\"[^\"]*\"", " ", text)
     punctuation = re.search(r"[.!?;\n]", text)
     if punctuation and punctuation[0] == "?":
         return False
@@ -175,12 +193,28 @@ def candidate_accepts(text):
 
 
 def booking_allowed(state, selected, *, day=None, at=None, request=None):
-    from app.agents.backends.common import explicit_stop, latest_text
+    from app.agents.backends.common import explicit_stop, latest_text, unquoted_text
 
     text = latest_text(state)
+    original = state.get("unscoped_candidate_text")
+    blocked = False
+    if original is not None:
+        original = unquoted_text(original)
+        blocked = bool(
+            re.search(
+                r"\b(?:don't|do not|never|cannot|can't)[,\s]+(?:book|confirm|schedule|attend)\b|"
+                r"\bnot available\b|\b(?:cancel|decline) (?:the|my|this|that) (?:appointment|interview)\b",
+                original.replace("’", "'"),
+                re.I,
+            )
+        ) or any(explicit_stop(clause.strip()) for clause in re.split(r"[.!?;\n]", original))
+        if not state.get("selected_slot_id") and re.search(
+            r"\b(?:if|maybe|unless|perhaps|hypothetical|suppose|example)\b", original, re.I
+        ):
+            blocked = True
     offered = state.get("offered_slots", [])
     allowed = False
-    if not explicit_stop(text):
+    if not blocked and not explicit_stop(text):
         if state.get("selected_slot_id") == selected:
             allowed = True
         elif candidate_accepts(text):
@@ -312,7 +346,12 @@ def output_result(state, repository):
         "result": result.model_dump(),
         "messages": messages,
         "booking": result.booking,
-        "offered_slots": result.offered_slots,
+        "offered_slots": state.get("offered_slots", [])
+        if state.get("turn_intent", {}).get("request_scope") == "off_topic"
+        else result.offered_slots,
         "conversation_status": result.conversation_status,
+        "awaiting_opt_out_confirmation": bool(
+            state.get("awaiting_opt_out_confirmation") and result.action != "end" and not reason
+        ),
         "answer_validated": True,
     }

@@ -1,15 +1,67 @@
 import re
 
 from app.agents.backends.common import latest_text
-from app.guardrails import check_sources, redact_credentials, reject
+from app.guardrails import check_sources, record, redact_credentials, reject
 from app.observability.tracing import span
-from app.schemas import InfoDecision
+from app.rag.qualifications import (
+    has_other_job_question,
+    qualification_groups,
+    render_qualifications,
+)
+from app.schemas import InfoAnswer, InfoDecision
+
+
+def complete_qualifications(backend, question, excerpts, history, requirements):
+    valid = {item["id"] for item in excerpts}
+    expected = {item["id"] for item in requirements}
+    extra = has_other_job_question(question)
+    result = backend.info(question, excerpts, history, requirements=requirements)
+    if extra and result.supported and result.answer.strip():
+        check_sources(result.source_ids, valid)
+    received = getattr(result, "requirement_ids", [])
+    if set(received) != expected or len(received) != len(expected):
+        record("qualification_coverage", "output", "clarify", "incomplete_checklist")
+        try:
+            revised = backend.info(
+                question,
+                excerpts,
+                history,
+                requirements=requirements,
+                missing_requirement_ids=sorted(expected - set(received)),
+            )
+        except Exception:
+            record("qualification_coverage", "output", "clarify", "revision_unavailable")
+        else:
+            if extra and revised.supported and revised.answer.strip():
+                check_sources(revised.source_ids, valid)
+            result = revised
+        received = getattr(result, "requirement_ids", [])
+        if set(received) != expected or len(received) != len(expected):
+            record("qualification_coverage", "output", "allow", "source_checklist_fallback")
+    # Render the verified source bullets, preserving every compound clause and
+    # the source's required/preferred classification regardless of model coverage.
+    sources = list(dict.fromkeys(source for item in requirements for source in item["source_ids"]))
+    check_sources(sources, valid)
+    answer = render_qualifications(requirements)
+    if extra and result.supported and result.answer.strip():
+        answer += "\n\n" + result.answer.strip()
+        sources = list(dict.fromkeys([*sources, *result.source_ids]))
+    elif extra and result.answer.strip():
+        answer += "\n\nThe job description doesn't specify the additional requested details. A recruiter can clarify them."
+    record("qualification_coverage", "output", "allow", "complete_source_bullets")
+    return InfoAnswer(answer=answer, source_ids=sources, supported=True)
 
 
 def advise(backend, retriever, state: dict) -> dict:
     decision = backend.info_decision(state)
     question = state.get("turn_intent", {}).get("info_question")
     latest = latest_text(state)
+    if qualification_groups(latest) and not any(
+        item["advisor"] == "info" for item in state.get("advisor_results", [])
+    ):
+        # A direct request to list qualifications also applies without a question
+        # mark, and cannot be replaced by Main's own clarification question.
+        decision = InfoDecision(decision="info_needed", question=latest)
     explicit_questions = re.findall(r"[^.!?\n]*\?", latest)
     if (
         decision.decision == "info_not_needed"
@@ -33,8 +85,14 @@ def advise(backend, retriever, state: dict) -> dict:
         return {"advice": decision.model_dump()}
     question = decision.question
     question = redact_credentials(question, stage="retrieval")
+    retrieval_question = question
+    if qualification_groups(question):
+        if qualification_groups(latest):
+            question = retrieval_question = latest
+        elif re.match(r"^\s*(?:is|are|do|does)\b", latest, re.I):
+            question = retrieval_question = latest
     with span("retrieval", "job_search") as item:
-        excerpts = retriever.search(question, job_id=state.get("job_id"))
+        excerpts = retriever.search(retrieval_question, job_id=state.get("job_id"))
         if any(
             excerpt.get("job_id") is not None and excerpt["job_id"] != state.get("job_id")
             for excerpt in excerpts
@@ -54,7 +112,16 @@ def advise(backend, retriever, state: dict) -> dict:
             "supported": False,
         }
     else:
-        result = backend.info(question, excerpts, state.get("messages", []))
+        requirements = [
+            entry for excerpt in excerpts for entry in excerpt.get("qualification_items", [])
+        ]
+        result = (
+            complete_qualifications(
+                backend, question, excerpts, state.get("messages", []), requirements
+            )
+            if requirements
+            else backend.info(question, excerpts, state.get("messages", []))
+        )
         valid = {item["id"] for item in excerpts}
         if result.supported:
             check_sources(result.source_ids, valid)

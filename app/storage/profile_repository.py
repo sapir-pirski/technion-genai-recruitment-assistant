@@ -162,18 +162,6 @@ class ProfileRepository:
                 existing.is_current = True
         return profile_id
 
-    def profile(self, profile_id, conversation_id):
-        with Session(self.engine) as session:
-            row = session.get(CandidateProfile, profile_id) if profile_id else None
-            if row is None or row.conversation_id != conversation_id:
-                return None
-            return {
-                "profile_id": row.profile_id,
-                "data": row.data,
-                "status": row.status,
-                "input_fingerprint": row.input_fingerprint,
-            }
-
     @staticmethod
     def summary(source):
         result = {

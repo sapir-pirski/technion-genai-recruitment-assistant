@@ -73,9 +73,12 @@ def calendar_request():
 def backend(calendar_request):
     client = Mock(spec=OpenAIBackend)
     client.plan.return_value = Plan(
+        request_scope="recruitment",
+        recruitment_requests=[],
         next_advisor="respond",
         stop_requested=False,
         closure_reason=None,
+        opt_out_evidence=None,
         declined_slot_ids=[],
         info_question=None,
         scheduling_needed=False,

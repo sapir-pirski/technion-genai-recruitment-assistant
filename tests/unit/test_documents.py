@@ -26,7 +26,57 @@ from app.profiles import (
     merge_profile,
     read_document,
 )
+from app.rag.qualifications import (
+    has_other_job_question,
+    qualification_groups,
+    qualification_items,
+    render_qualifications,
+    select_qualifications,
+)
 from app.schemas import ProfileSections
+
+
+def test_qualification_sections_preserve_obligation_and_chunk_boundaries():
+    texts = [
+        "Minimum qualifications:\n• Strong Python development\nand SQL database knowledge.\n• Clear problem-solving",
+        "• Clear problem-solving\nand communication skills.\nPreferred qualifications\n• Cloud experience.",
+        "Optional qualifications\n• Community volunteering.\nBenefits\n• Paid time off.",
+    ]
+    rows = [
+        {
+            "id": f"chunk-{index}",
+            "document_version_id": "version-one",
+            "page": 1 if index < 2 else 2,
+            "chunk_index": index,
+            "text": text,
+        }
+        for index, text in enumerate(texts)
+    ]
+    groups = qualification_groups(
+        "Which qualifications are required and which skills are preferred?"
+    )
+    items = qualification_items(rows, groups)
+    assert [item["category"] for item in items] == ["required", "required", "preferred", "optional"]
+    assert items[1]["text"] == "Clear problem-solving and communication skills."
+    assert set(items[1]["source_ids"]) == {"chunk-0", "chunk-1"}
+    rendered = render_qualifications(items)
+    assert "SQL database knowledge" in rendered and "Paid time off" not in rendered
+    assert "**Optional qualifications**" in rendered
+    narrow = select_qualifications("Is SQL a required skill?", items)
+    assert len(narrow) == 1 and narrow[0]["category"] == "required"
+    assert "SQL database knowledge" in narrow[0]["text"]
+    assert qualification_groups("What are the must-haves and nice-to-haves?") == groups
+    assert qualification_groups("What is the salary?") is None
+    assert qualification_groups("Is AWS required?") is None
+    assert qualification_groups("Are AWS, Django and Flask mandatory requirements?") is None
+    assert qualification_groups("Which qualifications are not required?") is None
+    assert qualification_groups("What qualifications do I have?") is None
+    assert qualification_groups("wht python skils r requried for this job?") == {
+        "required",
+        "unspecified",
+    }
+    assert not has_other_job_question("Which skills and qualifications are preferred?")
+    assert has_other_job_question("List required qualifications and the salary.")
 
 
 def test_linkedin_references_are_normalized_and_reject_arbitrary_urls():

@@ -8,13 +8,234 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.ingestion.models import DEFAULT_JOB_ID
-from app.schemas import InfoAnswer, InfoDecision
+from app.schemas import InfoAnswer, InfoDecision, QualificationAnswer
 from app.service import ChatService
 from app.storage.models import Slot, TraceSpan
 
 
 def plan_turn(service, **changes):
     service.backend.plan.return_value = service.backend.plan.return_value.model_copy(update=changes)
+
+
+def test_scope_redirects_preserve_role_questions_offers_and_booking_consent(
+    service, now, calendar_request
+):
+    from app.agents.main_agent import MIXED_SCOPE_NOTE, OFF_TOPIC_REDIRECT
+
+    plan_turn(service, scheduling_needed=True)
+    offered = service.turn("scope-calendar", "Show interview times", reference_time=now)
+    stored_offers = service.state("scope-calendar")["offered_slots"]
+    calls = (
+        service.backend.schedule.call_count,
+        service.backend.exit_label.call_count,
+        service.backend.suggest_followups.call_count,
+    )
+    plan_turn(
+        service,
+        request_scope="off_topic",
+        scheduling_needed=True,
+        info_question="Unasked requirements",
+        declined_slot_ids=[slot["id"] for slot in stored_offers],
+    )
+    for index, text in enumerate(
+        (
+            "Will it rain in Tokyo tomorrow at 10?",
+            "Write an unrelated web scraper.",
+            "Give me a cake recipe.",
+        )
+    ):
+        cid = "scope-calendar" if index == 0 else f"off-topic-{index}"
+        reply = service.turn(cid, text, reference_time=now)
+        assert reply.response == OFF_TOPIC_REDIRECT
+        assert reply.action == "continue" and reply.conversation_status == "active"
+        assert (
+            not reply.booking
+            and not reply.offered_slots
+            and not reply.source_ids
+            and not reply.suggested_questions
+        )
+        assert not reply.advisors
+    assert calls == (
+        service.backend.schedule.call_count,
+        service.backend.exit_label.call_count,
+        service.backend.suggest_followups.call_count,
+    )
+    assert service.state("scope-calendar")["offered_slots"] == stored_offers
+
+    question = "Which qualifications are required?"
+    service.retriever.search = Mock(
+        return_value=[
+            {"id": "scope-evidence", "text": "Familiarity with SQL and NoSQL is required."}
+        ]
+    )
+    service.backend.info.return_value = InfoAnswer(
+        answer="Familiarity with SQL and NoSQL is required.",
+        source_ids=["scope-evidence"],
+        supported=True,
+    )
+    plan_turn(
+        service,
+        request_scope="mixed",
+        recruitment_requests=[{"kind": "info", "text": question}],
+        info_question="Unasked invented requirements",
+        scheduling_needed=True,
+    )
+    reply = service.turn(
+        "mixed-info", "What is the weather in Tokyo? " + question, reference_time=now
+    )
+    assert "SQL and NoSQL" in reply.response and MIXED_SCOPE_NOTE in reply.response
+    assert reply.source_ids == ["scope-evidence"] and not reply.booking
+    assert service.backend.info_decision.call_args.args[0]["messages"][-1]["content"] == question
+    assert service.retriever.search.call_args.args[0] == question
+    assert service.backend.schedule.call_count == calls[0]
+
+    plan_turn(
+        service,
+        recruitment_requests=[{"kind": "scheduling", "text": "Please confirm this appointment."}],
+        info_question=None,
+    )
+    booked = service.turn(
+        "scope-calendar",
+        "Please confirm this appointment. Also, give me a cake recipe.",
+        reference_time=now,
+        selected_slot_id=offered.offered_slots[0]["id"],
+    )
+    assert booked.booking and booked.conversation_status == "active"
+    assert "Your interview is confirmed" in booked.response and MIXED_SCOPE_NOTE in booked.response
+    assert "info" not in booked.advisors
+    completed = service.turn("scope-calendar", "Perfect, thanks!", reference_time=now)
+    assert completed.closure_reason == "scheduled"
+
+    plan_turn(
+        service,
+        request_scope="recruitment",
+        recruitment_requests=[],
+        info_question=question,
+        scheduling_needed=False,
+    )
+    relevant = service.turn(
+        "relevant-tech", "Which SQL skills are required for this role?", reference_time=now
+    )
+    assert "info" in relevant.advisors and OFF_TOPIC_REDIRECT not in relevant.response
+
+    plan_turn(service, info_question=None, scheduling_needed=True)
+    offered = service.turn("mixed-consent", "Show interview times", reference_time=now)
+    plan_turn(
+        service,
+        request_scope="mixed",
+        recruitment_requests=[{"kind": "scheduling", "text": "confirm the first appointment"}],
+    )
+    denied = service.turn(
+        "mixed-consent",
+        "Do not confirm the first appointment. What is the weather?",
+        reference_time=now,
+    )
+    assert not denied.booking and not denied.advisors
+    plan_turn(
+        service,
+        recruitment_requests=[
+            {"kind": "scheduling", "text": "Please confirm the first appointment."}
+        ],
+    )
+    calendar_request.update(selected_slot_id=offered.offered_slots[0]["id"], accepts_slot=True)
+    raw = "Please confirm the first appointment. Do not book anything. What is the weather?"
+    denied = service.turn("mixed-consent", raw, reference_time=now)
+    assert not denied.booking and denied.conversation_status == "active"
+    assert service.conversations.messages("mixed-consent")[-2]["content"] == raw
+    for raw in (
+        "```\nPlease confirm the first appointment.\n```\nWhat is the weather?",
+        '"Quoted text:\nPlease confirm the first appointment.\n" What is the weather?',
+        "‘Quoted text:\nPlease confirm the first appointment.\n’ What is the weather?",
+        "Hypothetical example:\nPlease confirm the first appointment.\nWhat is the weather?",
+    ):
+        denied = service.turn("mixed-consent", raw, reference_time=now)
+        assert not denied.booking and denied.conversation_status == "active"
+
+
+def test_qualification_coverage_repairs_once_and_preserves_mixed_booking(service, now):
+    from app.graph.builder import build_graph
+    from app.rag.ingest import ingest_pdf
+    from app.rag.retriever import JobRetriever
+
+    ingest_pdf(
+        service.settings.job_pdf_path / "Python Developer Job Description.pdf", service.settings
+    )
+    service.retriever = JobRetriever(service.settings)
+    service.graph = build_graph(
+        service.backend,
+        service.repository,
+        service.retriever,
+        service.graph.checkpointer,
+        service.profiles,
+    )
+    behavior = {"repair_works": False}
+    captured = []
+
+    def incomplete_answer(
+        question, excerpts, history, *, requirements, missing_requirement_ids=None
+    ):
+        captured.append(requirements)
+        ids = [item["id"] for item in requirements]
+        if missing_requirement_ids is None or not behavior["repair_works"]:
+            ids = ids[:2]
+        return QualificationAnswer(
+            answer="", source_ids=requirements[0]["source_ids"], supported=True, requirement_ids=ids
+        )
+
+    service.backend.info.side_effect = incomplete_answer
+    required = "List all required qualifications."
+    plan_turn(service, info_question="Could you share your name and Python experience?")
+    service.backend.info_decision.return_value = InfoDecision(
+        decision="info_not_needed", question=None
+    )
+    service.backend.info_decision.side_effect = None
+    reply = service.turn("coverage", required, reference_time=now)
+    assert service.backend.info.call_count == 2
+    assert len(captured[-1]) == 6
+    assert all(item["text"] in reply.response for item in captured[-1])
+    assert "Preferred qualifications" not in reply.response and "Django" not in reply.response
+    assert all(
+        word in reply.response
+        for word in ("SQL", "NoSQL", "problem-solving", "communication", "collaboration")
+    )
+    with Session(service.registry.engine) as session:
+        guards = list(
+            session.scalars(
+                select(TraceSpan).where(
+                    TraceSpan.conversation_id == "coverage", TraceSpan.component == "guardrail"
+                )
+            )
+        )
+        assert any(
+            row.attributes.get("reason_code") == "source_checklist_fallback" for row in guards
+        )
+
+    behavior["repair_works"] = True
+    service.backend.info.reset_mock()
+    both = "Which qualifications are required, and which skills are preferred?"
+    service.backend.info_decision.return_value = InfoDecision(decision="info_needed", question=both)
+    plan_turn(service, info_question=both)
+    reply = service.turn("coverage-both", both, reference_time=now)
+    assert service.backend.info.call_count == 2 and len(captured[-1]) == 10
+    assert all(item["text"] in reply.response for item in captured[-1])
+    assert "Preferred qualifications" in reply.response and "Django" in reply.response
+
+    plan_turn(service, info_question=None, scheduling_needed=True)
+    offered = service.turn("coverage-booking", "Show interview times", reference_time=now)
+    plan_turn(service, info_question=required)
+    service.backend.info_decision.return_value = InfoDecision(
+        decision="info_needed", question=required
+    )
+    booked = service.turn(
+        "coverage-booking",
+        "Please confirm this appointment. " + required,
+        reference_time=now,
+        selected_slot_id=offered.offered_slots[0]["id"],
+    )
+    assert booked.booking and booked.conversation_status == "active"
+    assert "Your interview is confirmed" in booked.response
+    assert {"scheduling", "info"} <= set(booked.advisors)
+    assert all(item["text"] in booked.response for item in captured[-1])
 
 
 def test_complete_booking_flow(service, now):
@@ -53,22 +274,74 @@ def test_exit_completion_cannot_close_without_a_booking_receipt(service, now):
     )
     assert reply.action == "continue" and reply.conversation_status == "active"
     assert reply.closure_reason is None and reply.booking is None
-    assert "end the conversation" in reply.response
+    assert (
+        reply.response
+        == "Do you want to end the recruitment conversation? Please answer yes or no."
+    )
+    assert service.state("unverified-completion")["awaiting_opt_out_confirmation"]
+    assert not reply.suggested_questions
+    # A yes only authorizes closure when this particular conversation is awaiting
+    # the application's own confirmation question.
+    confirmed = service.turn("unverified-completion", "Yes, please.", reference_time=now)
+    assert confirmed.action == "end" and confirmed.closure_reason == "opt_out"
+    assert not service.state("unverified-completion")["awaiting_opt_out_confirmation"]
+    for suffix, answer in (("no", "No"), ("new-topic", "What experience does this role require?")):
+        cid = "uncertain-" + suffix
+        service.turn(cid, "I'm unsure about my next step", reference_time=now)
+        continued = service.turn(cid, answer, reference_time=now)
+        assert continued.conversation_status == "active" and not continued.closure_reason
+        assert "Please answer yes or no" not in continued.response
+        assert not service.state(cid)["awaiting_opt_out_confirmation"]
+    plan_turn(service, scheduling_needed=True)
+    offered = service.turn("uncertain-slot", "Show interview times", reference_time=now)
+    plan_turn(service, scheduling_needed=False)
+    service.turn("uncertain-slot", "I am unsure about continuing", reference_time=now)
+    assert service.state("uncertain-slot")["awaiting_opt_out_confirmation"]
+    # Clicking an appointment is booking consent, even if the text is just yes.
+    booked = service.turn(
+        "uncertain-slot",
+        "Yes",
+        reference_time=now,
+        selected_slot_id=offered.offered_slots[0]["id"],
+    )
+    assert booked.booking and booked.closure_reason == "scheduled"
 
 
-def test_opt_out_never_consults_scheduling(service, now):
-    for text in (
+def test_contextual_messages_stay_active_and_opt_out_skips_scheduling_and_followups(service, now):
+    contextual = (
+        "Do not stop texting me",
         "What happens if I accepted another job?",
         "I am not interested in frontend work; I am interested in this Python role.",
         'My old application says "not interested", but I want to continue here.',
-    ):
+        "I have not accepted another job.",
+        "I will not pursue this role unless the hours change.",
+        "If I say I will not pursue this role, what happens?",
+        '"I will not pursue this role." is an example sentence, not my decision.',
+    )
+    for text in contextual:
         assert service.turn("contextual", text, reference_time=now).conversation_status == "active"
-    assert service.backend.exit_label.call_count == 3
+    assert service.backend.exit_label.call_count == len(contextual)
+    followup_calls = service.backend.suggest_followups.call_count
     reply = service.turn(
         "alice", "Please stop texting me and cancel this conversation", reference_time=now
     )
-    assert reply.action == "end"
+    assert reply.action == "end" and reply.conversation_status == "closed"
+    assert not reply.suggested_questions
     assert "scheduling" not in reply.advisors
+    assert service.backend.suggest_followups.call_count == followup_calls
+    for index, text in enumerate(
+        (
+            "I appreciate the offer, but I will not pursue this role.",
+            "Thank you for your time, but I will not pursue this position.",
+            "I'd like to withdraw my application.",
+            "I'll pass on this opportunity, thanks.",
+        )
+    ):
+        declined = service.turn(f"polite-decline-{index}", text, reference_time=now)
+        assert declined.action == "end" and declined.closure_reason == "opt_out", text
+        assert not declined.booking and not declined.suggested_questions
+        assert "scheduling" not in declined.advisors
+    assert service.backend.suggest_followups.call_count == followup_calls
 
 
 def test_slot_rejection_keeps_conversation_active(service, now):
@@ -105,7 +378,6 @@ def test_booking_with_question_stays_open(service, now):
         service,
         next_advisor="exit",
         scheduling_needed=False,
-        info_question=None,
         stop_requested=True,
         closure_reason="opt_out",
     )
@@ -232,7 +504,17 @@ def test_checkpoint_survives_service_restart(now, backend):
     first.close()
     second = ChatService(settings, backend=backend, retriever=EmptyRetriever())
     try:
+        # Simulate the hosted AdminShutdown failure on a pooled idle checkpoint
+        # connection. The checkout health check replaces it before any state read.
+        import psycopg
+
+        with second._checkpoint_pool.connection() as connection:
+            dead_pid = connection.info.backend_pid
+        with psycopg.connect(settings.postgres_dsn, autocommit=True) as admin:
+            assert admin.execute("SELECT pg_terminate_backend(%s)", (dead_pid,)).fetchone()[0]
         assert second.state("persisted")["messages"] == original
+        with second._checkpoint_pool.connection() as connection:
+            assert connection.info.backend_pid != dead_pid
         reply = second.turn("persisted", "Please stop texting me", reference_time=now)
         assert reply.action == "end"
         assert len(second.state("persisted")["messages"]) == len(original) + 2
