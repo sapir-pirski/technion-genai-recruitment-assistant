@@ -473,7 +473,7 @@ The raw benchmark and contact metadata stay private; they are not screenshot mat
 
 ### Held-out benchmark
 
-Saved results are dated **November 8, 2026** and are presented in the executed
+Documentation updated **November 22, 2026**. Saved results are in the executed
 [evaluation notebook](tests/test_evals.ipynb). The benchmark contains 15 conversations
 and 59 labeled recruiter turns. Splits are by complete conversation: nine training,
 three validation, and three test conversations. The held-out test has 11 labeled
