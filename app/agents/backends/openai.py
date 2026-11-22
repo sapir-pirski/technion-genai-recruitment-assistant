@@ -5,6 +5,7 @@ from langchain_openai import ChatOpenAI
 
 from app.agents.backends.common import (
     OPERATION_PROMPTS,
+    latest_text,
     model_context,
     prompt_manifest,
     prompt_spec,
@@ -63,10 +64,17 @@ class OpenAIBackend:
         ]
 
     def plan(self, state: dict) -> Plan:
+        context = {
+            "current_request": {
+                "message": latest_text(state),
+                "phase": "review_advisors" if state.get("advisor_results") else "new_turn",
+            },
+            **model_context(state),
+        }
         return self._structured(
             Plan,
             "main",
-            self._messages("main", model_context(state)),
+            self._messages("main", context),
         )
 
     def extract_profile(self, text: str) -> ProfileSections:

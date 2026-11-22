@@ -449,13 +449,43 @@ def test_operation_selects_model_and_sends_compatible_bounded_parameters(
             side_effect=lambda **options: ChatOpenAI(http_client=client, **options),
         ):
             adapter = OpenAIBackend(settings)
-        state = {"messages": [], "reference_time": now.isoformat(), "timezone": "UTC"}
+        state = {
+            "messages": [
+                {"role": "user", "content": "What is the weather?"},
+                {"role": "assistant", "content": "I can help with recruitment."},
+                {
+                    "role": "user",
+                    "content": "What qualifications and interview times are available?",
+                },
+                {
+                    "role": "assistant",
+                    "content": "Python is required. Tuesday appointments are available.",
+                },
+                {"role": "user", "content": "What do you know about my background?"},
+            ],
+            "candidate_profile": {"sections": {"name": "Sam Example", "skills": ["Python"]}},
+            "reference_time": now.isoformat(),
+            "timezone": "UTC",
+        }
         calls = {
             "main": lambda: adapter.plan(state),
             "profile_extraction": lambda: adapter.extract_profile("Python"),
         }
         calls[operation]()
         if operation == "main":
+            context = json.loads(seen[-1]["messages"][1]["content"])
+            assert context["current_request"] == {
+                "message": "What do you know about my background?",
+                "phase": "new_turn",
+            }
+            assert context["history"] == state["messages"]
+            state["advisor_results"] = [{"advisor": "exit", "decision": "do_not_end"}]
+            adapter.plan(state)
+            context = json.loads(seen[-1]["messages"][1]["content"])
+            assert context["current_request"]["phase"] == "review_advisors"
+            assert context["current_request"]["message"] == state["messages"][-1]["content"]
+            assert context["advisor_results"] == state["advisor_results"]
+            state["advisor_results"] = []
             seen.clear()
             # Chat revisions use the existing non-reasoning budget model and system prompt.
             content = json.dumps(
