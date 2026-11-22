@@ -254,3 +254,79 @@ def test_huggingface_exit_does_not_construct_or_call_an_openai_exit_client():
     classifier.assert_called_once()
     assert backend.prompt_manifest["exit"]["instruction_role"] is None
     assert backend.policy["exit"]["max_completion_tokens"] is None
+
+
+def test_pinned_exit_download_is_cached_and_does_not_receive_history(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import numpy as np
+    from pydantic import SecretStr
+
+    from app.agents.backends import huggingface
+
+    settings = Settings(
+        _env_file=None,
+        database_url="postgresql://example:example@localhost/example",
+        exit_provider="huggingface",
+        hf_exit_repo_id="example/exit-model",
+        hf_exit_repo_revision="a" * 40,
+        hf_token=SecretStr("fictitious-model-read-token"),
+    )
+    download = Mock(return_value=str(tmp_path))
+    monkeypatch.setattr("huggingface_hub.snapshot_download", download)
+    tokenizer, session = Mock(), Mock()
+    tokenizer.encode.return_value = SimpleNamespace(
+        ids=[1, 2], attention_mask=[1, 1], overflowing=[]
+    )
+    session.run.return_value = [np.asarray([[1.0, 0.0]])]
+    monkeypatch.setattr(
+        huggingface,
+        "_load_local",
+        lambda *args: (tokenizer, session, {"labels": ["do_not_end", "end"]}),
+    )
+    huggingface._hub_artifact.cache_clear()
+    try:
+        for message in ("Fictitious candidate background", "Another fictitious message"):
+            assert (
+                huggingface.exit_label(settings, [{"role": "user", "content": message}])
+                == "do_not_end"
+            )
+        assert download.call_count == 1
+        arguments = download.call_args.kwargs
+        assert arguments["revision"] == "a" * 40
+        assert set(arguments["allow_patterns"]) == {
+            "model.onnx",
+            "tokenizer.json",
+            "exit_classifier.json",
+        }
+        assert "history" not in arguments and "Fictitious" not in str(arguments)
+        assert settings.model_policy()["exit"]["source_commit"] == "a" * 40
+        with pytest.raises(ValueError, match="immutable"):
+            Settings(
+                database_url=settings.database_url,
+                hf_exit_repo_id="example/exit-model",
+                hf_exit_repo_revision="main",
+            )
+    finally:
+        huggingface._hub_artifact.cache_clear()
+
+
+def test_failed_exit_download_does_not_expose_credentials(monkeypatch):
+    from app.agents.backends import huggingface
+
+    settings = Settings(
+        _env_file=None,
+        database_url="postgresql://example:example@localhost/example",
+        hf_exit_repo_id="example/exit-model",
+        hf_exit_repo_revision="b" * 40,
+    )
+    monkeypatch.setattr(
+        "huggingface_hub.snapshot_download", Mock(side_effect=OSError("fictitious-secret"))
+    )
+    huggingface._hub_artifact.cache_clear()
+    try:
+        with pytest.raises(ValueError, match="Cannot fetch") as error:
+            huggingface.artifact_directory(settings)
+        assert "fictitious-secret" not in str(error.value)
+    finally:
+        huggingface._hub_artifact.cache_clear()
